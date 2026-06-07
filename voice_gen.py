@@ -45,32 +45,30 @@ def generate_voice(text: str, output_path: Path) -> Path:
 
 
 def generate_voices_for_copies(
-    copies: dict[str, dict[str, str]],
+    copies: dict[str, str],
     output_dir: Path,
-) -> dict[str, dict[str, Path]]:
+) -> dict[str, Path]:
     """Generate audio for all copy variants.
 
     Args:
-        copies: {style_key: {platform_key: copy_text}}
+        copies: {style_key: copy_text}
         output_dir: Directory to save audio files.
 
     Returns:
-        {style_key: {platform_key: audio_path}}
+        {style_key: audio_path}
     """
     audio_dir = output_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     results = {}
-    for style_key, platforms in copies.items():
-        results[style_key] = {}
-        for plat_key, text in platforms.items():
-            filename = f"{plat_key}_{style_key}.mp3"
-            audio_path = audio_dir / filename
-            print(f"  🎙️  生成配音: {filename}...")
-            try:
-                results[style_key][plat_key] = generate_voice(text, audio_path)
-            except Exception as e:
-                print(f"  ⚠️  配音生成失败 ({filename}): {e}")
-                results[style_key][plat_key] = None
+    for style_key, text in copies.items():
+        filename = f"{style_key}.mp3"
+        audio_path = audio_dir / filename
+        print(f"  🎙️  生成配音: {filename}...")
+        try:
+            results[style_key] = generate_voice(text, audio_path)
+        except Exception as e:
+            print(f"  ⚠️  配音生成失败 ({filename}): {e}")
+            results[style_key] = None
 
     return results

@@ -30,7 +30,7 @@ def main():
     print(f"   {product['tagline']}")
 
     # Step 3: Generate copies
-    print("\n✍️  开始生成文案 (3风格 × 3平台)...")
+    print("\n✍️  开始生成文案 (3种风格)...")
     copies = generate_copies(product)
     print("   ✅ 文案生成完成")
 

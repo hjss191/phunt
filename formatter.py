@@ -11,7 +11,7 @@ def get_output_dir() -> Path:
     today = datetime.now().strftime("%Y-%m-%d")
     output_dir = OUTPUT_DIR / today
     # Create subdirectories
-    for subdir in ["douyin", "xiaohongshu", "wechat", "audio", "images"]:
+    for subdir in ["copy", "audio", "images"]:
         (output_dir / subdir).mkdir(parents=True, exist_ok=True)
     return output_dir
 
@@ -23,11 +23,11 @@ def get_style_names() -> dict[str, str]:
     return {k: v["name"] for k, v in data["styles"].items()}
 
 
-def save_copies(copies: dict[str, dict[str, str]], output_dir: Path) -> list[Path]:
+def save_copies(copies: dict[str, str], output_dir: Path) -> list[Path]:
     """Save all copy variants to files.
 
     Args:
-        copies: {style_key: {platform_key: copy_text}}
+        copies: {style_key: copy_text}
         output_dir: Today's output directory.
 
     Returns:
@@ -35,19 +35,18 @@ def save_copies(copies: dict[str, dict[str, str]], output_dir: Path) -> list[Pat
     """
     style_names = get_style_names()
     saved = []
+    copy_dir = output_dir / "copy"
 
-    for style_key, platforms in copies.items():
+    for style_key, text in copies.items():
         style_name = style_names.get(style_key, style_key)
-        for plat_key, text in platforms.items():
-            filename = f"{style_key}_{style_name}.md"
-            filepath = output_dir / plat_key / filename
+        filename = f"{style_key}_{style_name}.md"
+        filepath = copy_dir / filename
 
-            # Add markdown header
-            header = f"# {style_name} — {plat_key}\n\n"
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(header + text)
+        header = f"# {style_name}\n\n"
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(header + text)
 
-            saved.append(filepath)
+        saved.append(filepath)
 
     return saved
 
@@ -65,10 +64,9 @@ def print_summary(
         print(f"   {f.relative_to(output_dir)}")
 
     print("\n🎙️  音频文件:")
-    for style_key, platforms in audio_files.items():
-        for plat_key, path in platforms.items():
-            if path:
-                print(f"   {path.relative_to(output_dir)}")
+    for style_key, path in audio_files.items():
+        if path:
+            print(f"   {path.relative_to(output_dir)}")
 
     print("\n🖼️  图片文件:")
     for name, path in image_files.items():
