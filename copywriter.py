@@ -51,16 +51,20 @@ def generate_copy_srt(product: dict, style_key: str = "style_a") -> tuple[str, s
     print(f"  ✍️  生成 {style['name']}文案（SRT 格式）...")
     prompt = build_prompt(product, style)
 
-    response = client.chat.completions.create(
-        model="mimo-v2.5-pro",
-        messages=[
-            {"role": "system", "content": style["system_prompt"]},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.8,
-        max_tokens=2000,
-    )
-    raw_output = response.choices[0].message.content.strip()
+    try:
+        response = client.chat.completions.create(
+            model="mimo-v2.5-pro",
+            messages=[
+                {"role": "system", "content": style["system_prompt"]},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.8,
+            max_tokens=2000,
+        )
+        raw_output = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"   ❌ API 调用失败: {e}")
+        return None, None
 
     # 尝试解析 SRT
     entries = parse_srt(raw_output)
@@ -90,6 +94,9 @@ def generate_copies(product: dict) -> dict[str, tuple[str, str]]:
 
     for style_key in templates["styles"]:
         srt_text, plain_text = generate_copy_srt(product, style_key)
+        if srt_text is None:
+            print(f"   ⚠️  跳过失败的风格: {style_key}")
+            continue
         results[style_key] = (srt_text, plain_text)
 
     return results
