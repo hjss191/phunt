@@ -22,10 +22,11 @@ SRT 字幕：
 5. 整体风格：简洁现代，深色背景，白色文字
 6. 字幕文字要大且清晰（适合手机观看）
 7. 音频轨道引用：{audio_path}
+8. 音频总时长：{total_duration}
 
 HyperFrames HTML 结构要求：
 - 根元素：<div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
 - 每个画面：<section class="frame" data-start="X" data-duration="Y" data-track-index="0">
-- 音频：<audio data-start="0" data-duration="TOTAL" data-track-index="1" src="audio.mp3">
+- 音频：<audio data-start="0" data-duration="{total_duration}" data-track-index="1" src="audio.mp3">
 
 请直接输出完整的 HTML 文件内容，不要加任何前缀说明。

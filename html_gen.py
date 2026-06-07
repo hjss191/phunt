@@ -7,6 +7,15 @@ from config import MIMO_API_KEY, MIMO_BASE_URL, TEMPLATES_DIR
 from srt_parser import parse_srt
 
 
+def _format_srt_time(seconds: float) -> str:
+    """Format seconds as SRT timestamp (HH:MM:SS,mmm)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+
 def load_html_prompt_template() -> str:
     """Load HTML prompt template."""
     with open(TEMPLATES_DIR / "html_prompt.txt", encoding="utf-8") as f:
@@ -23,6 +32,11 @@ def build_html_prompt(
     topics_str = ", ".join(product["topics"]) if product["topics"] else "N/A"
     image_paths_str = "\n".join(f"- {p}" for p in image_paths) if image_paths else "- 无图片"
 
+    # 解析 SRT 获取总时长
+    entries = parse_srt(srt_text)
+    total_duration = entries[-1].end if entries else 0
+    total_duration_srt = _format_srt_time(total_duration)
+
     template = load_html_prompt_template()
     return template.format(
         srt_content=srt_text,
@@ -34,6 +48,7 @@ def build_html_prompt(
         topics=topics_str,
         image_paths=image_paths_str,
         audio_path=audio_path,
+        total_duration=total_duration_srt,
     )
 
 
