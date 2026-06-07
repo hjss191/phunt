@@ -29,6 +29,14 @@ def render_video(
     Returns:
         Path to the rendered MP4 file, or None if rendering failed.
     """
+    # 验证输入文件存在
+    if not html_path.is_file():
+        print(f"  ⚠️  HTML 文件不存在: {html_path}")
+        return None
+    if not audio_path.is_file():
+        print(f"  ⚠️  音频文件不存在: {audio_path}")
+        return None
+
     if not check_hyperframes_available():
         print("  ⚠️  npx 不可用，请安装 Node.js 22+")
         print("     下载地址: https://nodejs.org/")
@@ -37,7 +45,9 @@ def render_video(
     # 确保输出目录存在
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 复制音频到 HTML 同目录（HyperFrames 需要）
+    # 复制音频到 HTML 同目录 — HyperFrames 通过约定（同目录同名）自动发现音频文件，
+    # 所以 render 命令中不需要显式传入 audio_path 参数。
+    # 参见: https://hyperframes.dev/docs/conventions
     audio_dest = html_path.parent / audio_path.name
     if not audio_dest.exists():
         shutil.copy2(audio_path, audio_dest)
