@@ -1,5 +1,7 @@
 """Main entry point — orchestrates the daily workflow with video generation."""
 
+DEFAULT_STYLE = "style_a"
+
 from config import validate_config
 from phunt_client import fetch_top_products, display_products, select_product
 from copywriter import generate_copy_srt
@@ -33,18 +35,21 @@ def main():
 
     # Step 3: 生成文案（SRT 格式）
     print("\n✍️  开始生成文案（SRT 格式）...")
-    srt_text, plain_text = generate_copy_srt(product, "style_a")
+    srt_text, plain_text = generate_copy_srt(product, DEFAULT_STYLE)
+    if srt_text is None:
+        print("   ❌ 文案生成失败，无法继续")
+        return
     print("   ✅ 文案生成完成")
 
     # Step 4: 保存文案
     output_dir = get_output_dir()
-    srt_path, txt_path = save_srt_copy(srt_text, plain_text, "style_a", output_dir)
+    srt_path, txt_path = save_srt_copy(srt_text, plain_text, DEFAULT_STYLE, output_dir)
     print(f"   📄 SRT: {srt_path.name}")
     print(f"   📄 TXT: {txt_path.name}")
 
     # Step 5: 生成配音
     print("\n🎙️  开始生成配音...")
-    audio_path = output_dir / "audio" / "style_a.mp3"
+    audio_path = output_dir / "audio" / f"{DEFAULT_STYLE}.mp3"
     generate_voice(plain_text, audio_path)
     print("   ✅ 配音生成完成")
 
@@ -56,7 +61,7 @@ def main():
 
     # Step 7: 生成 HTML
     print("\n🌐 生成 HyperFrames HTML...")
-    html_path = output_dir / "html" / "style_a.html"
+    html_path = output_dir / "html" / f"{DEFAULT_STYLE}.html"
     generate_html(product, srt_text, image_paths, str(audio_path), html_path)
     print("   ✅ HTML 生成完成")
 
@@ -64,7 +69,7 @@ def main():
     video_path = None
     if check_hyperframes_available():
         print("\n🎬 渲染视频...")
-        video_path = output_dir / "video" / "style_a.mp4"
+        video_path = output_dir / "video" / f"{DEFAULT_STYLE}.mp4"
         video_path = render_video(html_path, audio_path, video_path)
         if video_path:
             print("   ✅ 视频渲染完成")
@@ -78,13 +83,16 @@ def main():
     # 输出摘要
     print_summary(
         output_dir,
-        {"style_a": (srt_path, txt_path)},
-        {"style_a": audio_path},
+        {DEFAULT_STYLE: (srt_path, txt_path)},
+        {DEFAULT_STYLE: audio_path},
         image_files,
-        {"style_a": html_path},
-        {"style_a": video_path} if video_path else None,
+        {DEFAULT_STYLE: html_path},
+        {DEFAULT_STYLE: video_path} if video_path else None,
     )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n⏹️  用户中断，已退出。")
