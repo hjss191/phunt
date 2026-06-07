@@ -1,0 +1,31 @@
+请根据以下 SRT 字幕和产品信息，生成一个 HyperFrames 格式的 HTML 视频文件。
+
+SRT 字幕：
+{srt_content}
+
+产品信息：
+- 名称：{name}
+- 一句话介绍：{tagline}
+- 详细介绍：{description}
+- 产品链接：{url}
+- 投票数：{votes}
+- 相关话题：{topics}
+
+产品图片路径：
+{image_paths}
+
+要求：
+1. 生成竖屏视频 HTML（1080×1920）
+2. 每句字幕对应一个 section，用 data-start 和 data-duration 绑定时间戳
+3. 产品图片穿插在相关字幕的画面中
+4. 使用简单 CSS 渐变动画（fadeIn）
+5. 整体风格：简洁现代，深色背景，白色文字
+6. 字幕文字要大且清晰（适合手机观看）
+7. 音频轨道引用：{audio_path}
+
+HyperFrames HTML 结构要求：
+- 根元素：<div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
+- 每个画面：<section class="frame" data-start="X" data-duration="Y" data-track-index="0">
+- 音频：<audio data-start="0" data-duration="TOTAL" data-track-index="1" src="audio.mp3">
+
+请直接输出完整的 HTML 文件内容，不要加任何前缀说明。
