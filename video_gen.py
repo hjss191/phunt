@@ -53,6 +53,11 @@ def render_video(
     if not audio_dest.exists():
         shutil.copy2(audio_path, audio_dest)
 
+    # HyperFrames 默认查找 index.html，如果文件名不是 index.html 则创建副本
+    index_path = html_path.parent / "index.html"
+    if html_path.name != "index.html" and not index_path.exists():
+        shutil.copy2(html_path, index_path)
+
     print("  🎬  渲染视频...")
     print(f"     HTML: {html_path}")
     print(f"     音频: {audio_path}")

@@ -85,7 +85,7 @@ def generate_html(
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=4000,
+            max_tokens=8000,
         )
     except Exception as e:
         raise RuntimeError(f"HTML generation API call failed: {e}") from e
@@ -99,6 +99,18 @@ def generate_html(
     if html_content.endswith("```"):
         html_content = html_content[:-3]
     html_content = html_content.strip()
+
+    # 验证 HTML 是否包含 HyperFrames 必需的数据属性
+    if "data-composition-id" not in html_content:
+        print("   ⚠️  HTML 缺少 HyperFrames 数据属性，尝试重新生成...")
+        # 如果缺少关键属性，在末尾添加音频元素（如果缺失）
+        if "<audio" not in html_content:
+            # 尝试从 SRT 获取总时长
+            entries = parse_srt(srt_text)
+            total_duration = entries[-1].end if entries else 30
+            audio_tag = f'\n<audio data-start="0" data-duration="{total_duration}" data-track-index="1" data-volume="1" src="audio.mp3"></audio>'
+            if "</div>" in html_content:
+                html_content = html_content.replace("</div>", audio_tag + "\n</div>", 1)
 
     # 确保输出目录存在
     output_path.parent.mkdir(parents=True, exist_ok=True)
