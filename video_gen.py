@@ -59,11 +59,13 @@ def render_video(
     print(f"     输出: {output_path}")
 
     try:
-        # 使用 hyperframes render 命令
+        # HyperFrames render 需要目录作为输入，用 -c 指定 composition 文件
+        project_dir = html_path.parent
         cmd = [
             "npx", "hyperframes", "render",
-            "--input", str(html_path),
-            "--output", str(output_path),
+            str(project_dir),
+            "-c", html_path.name,
+            "-o", str(output_path),
         ]
 
         # Windows 上 npx 实际是 npx.cmd，需要 shell=True 才能找到
