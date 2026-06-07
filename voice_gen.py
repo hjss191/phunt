@@ -5,25 +5,18 @@ import re
 from pathlib import Path
 from openai import OpenAI
 from config import MIMO_TTS_API_KEY, MIMO_TTS_BASE_URL
+from srt_parser import srt_to_text
 
 
 def strip_markdown(text: str) -> str:
     """Remove markdown formatting for clean TTS reading."""
-    # Remove headers: ### or **bold**
     text = re.sub(r'#{1,6}\s+', '', text)
-    # Remove bold/italic markers
     text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
-    # Remove links: [text](url) -> text
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
-    # Remove bare URLs
     text = re.sub(r'https?://\S+', '', text)
-    # Remove bullet points
     text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
-    # Remove blockquotes
     text = re.sub(r'^\s*>\s+', '', text, flags=re.MULTILINE)
-    # Remove horizontal rules
     text = re.sub(r'^-{3,}$', '', text, flags=re.MULTILINE)
-    # Clean up extra blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -69,14 +62,28 @@ def generate_voice(text: str, output_path: Path) -> Path:
     return output_path
 
 
+def generate_voice_from_srt(srt_text: str, output_path: Path) -> Path:
+    """Generate TTS audio from SRT text (extracts plain text first).
+
+    Args:
+        srt_text: SRT 格式文本。
+        output_path: Where to save the .mp3 file.
+
+    Returns:
+        Path to the generated audio file.
+    """
+    plain_text = srt_to_text(srt_text)
+    return generate_voice(plain_text, output_path)
+
+
 def generate_voices_for_copies(
-    copies: dict[str, str],
+    copies: dict[str, tuple[str, str]],
     output_dir: Path,
 ) -> dict[str, Path]:
     """Generate audio for all copy variants.
 
     Args:
-        copies: {style_key: copy_text}
+        copies: {style_key: (srt_text, plain_text)}
         output_dir: Directory to save audio files.
 
     Returns:
@@ -86,12 +93,12 @@ def generate_voices_for_copies(
     audio_dir.mkdir(parents=True, exist_ok=True)
 
     results = {}
-    for style_key, text in copies.items():
+    for style_key, (srt_text, plain_text) in copies.items():
         filename = f"{style_key}.mp3"
         audio_path = audio_dir / filename
         print(f"  🎙️  生成配音: {filename}...")
         try:
-            results[style_key] = generate_voice(text, audio_path)
+            results[style_key] = generate_voice(plain_text, audio_path)
         except Exception as e:
             print(f"  ⚠️  配音生成失败 ({filename}): {e}")
             results[style_key] = None
