@@ -46,7 +46,7 @@ def generate_copies(product: dict) -> dict[str, str]:
         prompt = build_prompt(product, style)
 
         response = client.chat.completions.create(
-            model="mimo",
+            model="mimo-v2.5-pro",
             messages=[
                 {"role": "system", "content": style["system_prompt"]},
                 {"role": "user", "content": prompt},

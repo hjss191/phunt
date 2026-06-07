@@ -23,7 +23,7 @@ def generate_voice(text: str, output_path: Path) -> Path:
     # MiMo TTS API — OpenAI compatible format
     # NOTE: Verify exact endpoint and model name with your MiMo TTS provider
     payload = {
-        "model": "mimo-tts",
+        "model": "mimo-v2.5-tts",
         "input": text,
         "voice": "zh-CN-Default",  # Chinese voice
         "response_format": "mp3",
