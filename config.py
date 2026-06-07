@@ -36,7 +36,5 @@ def validate_config():
         missing.append("MIMO_API_KEY")
     if not MIMO_BASE_URL:
         missing.append("MIMO_BASE_URL")
-    if not TONGYI_API_KEY:
-        missing.append("TONGYI_API_KEY")
     if missing:
         raise ValueError(f"Missing environment variables: {', '.join(missing)}\nCopy .env.example to .env and fill in your API keys.")

@@ -4,7 +4,7 @@ from config import validate_config
 from phunt_client import fetch_top_products, display_products, select_product
 from copywriter import generate_copies
 from voice_gen import generate_voices_for_copies
-from image_gen import generate_product_images
+from image_gen import download_product_images
 from formatter import get_output_dir, save_copies, print_summary
 
 
@@ -40,10 +40,10 @@ def main():
     audio_files = generate_voices_for_copies(copies, output_dir)
     print("   ✅ 配音生成完成")
 
-    # Step 5: Generate images
-    print("\n🎨 开始生成配图...")
-    image_files = generate_product_images(product, output_dir)
-    print("   ✅ 配图生成完成")
+    # Step 5: Download product images
+    print("\n🖼️  下载产品截图...")
+    image_files = download_product_images(product, output_dir)
+    print(f"   ✅ 下载完成 ({len([v for v in image_files.values() if v])} 张)")
 
     # Step 6: Save and summarize
     copy_files = save_copies(copies, output_dir)

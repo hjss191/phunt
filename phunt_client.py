@@ -20,6 +20,10 @@ query GetTodayPosts($first: Int!, $postedAfter: DateTime) {
         thumbnail {
           url
         }
+        media {
+          url
+          type
+        }
         topics {
           edges {
             node {
@@ -71,6 +75,10 @@ def fetch_top_products(count: int = 5) -> list[dict]:
             "votes": node["votesCount"],
             "thumbnail": node["thumbnail"]["url"] if node["thumbnail"] else "",
             "topics": topics,
+            "media": [
+                {"url": m["url"], "type": m["type"]}
+                for m in node.get("media", [])
+            ],
         })
     return products
 
@@ -80,7 +88,12 @@ def display_products(products: list[dict]) -> None:
     print("\n🏆 Product Hunt 今日 Top 5:\n")
     for i, p in enumerate(products, 1):
         topics_str = ", ".join(p["topics"][:3]) if p["topics"] else "N/A"
-        print(f"  [{i}] {p['name']}  ({p['votes']} votes)")
+        image_count = len([m for m in p["media"] if m["type"] == "image"])
+        video_count = len([m for m in p["media"] if m["type"] == "video"])
+        media_info = f"{image_count}图"
+        if video_count:
+            media_info += f" +{video_count}视频"
+        print(f"  [{i}] {p['name']}  ({p['votes']} votes, {media_info})")
         print(f"      {p['tagline']}")
         print(f"      Topics: {topics_str}")
         print()
