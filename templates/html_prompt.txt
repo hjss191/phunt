@@ -1,4 +1,6 @@
-请根据以下 SRT 字幕和产品信息，生成一个 HyperFrames 格式的 HTML 视频文件。
+你是一个前端开发专家。请根据以下 SRT 字幕和产品信息，生成一个 HyperFrames 格式的 HTML 视频文件。
+
+重要：你必须严格按照下面的 HyperFrames composition 格式输出，不要生成普通 HTML。
 
 SRT 字幕：
 {srt_content}
@@ -11,22 +13,76 @@ SRT 字幕：
 - 投票数：{votes}
 - 相关话题：{topics}
 
-产品图片路径：
+产品图片路径（相对于 HTML 文件）：
 {image_paths}
 
+音频文件路径（相对于 HTML 文件）：
+audio.mp3
+
+音频总时长：{total_duration}
+
+HyperFrames Composition 格式规范：
+
+1. 根元素必须是：<div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
+2. 每个画面元素必须有 class="clip" 和 data-start、data-duration、data-track-index 属性
+3. 音频元素必须有 data-start、data-duration、data-track-index、data-volume、src 属性
+4. 使用 CSS animation 实现 fadeIn 效果（HyperFrames 会控制动画时间轴）
+
+以下是完整示例：
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+#stage {
+    width: 1080px;
+    height: 1920px;
+    background: #0a0a1a;
+    font-family: sans-serif;
+    position: relative;
+    overflow: hidden;
+}
+.clip {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px;
+}
+.subtitle {
+    color: white;
+    font-size: 48px;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
+
+  <div class="clip" data-start="0" data-duration="3.2" data-track-index="0">
+    <div class="subtitle">第一句字幕内容</div>
+  </div>
+
+  <div class="clip" data-start="3.2" data-duration="4.3" data-track-index="0">
+    <div class="subtitle">第二句字幕内容</div>
+  </div>
+
+  <audio data-start="0" data-duration="30" data-track-index="1" data-volume="1" src="audio.mp3"></audio>
+
+</div>
+</body>
+</html>
+
 要求：
-1. 生成竖屏视频 HTML（1080×1920）
-2. 每句字幕对应一个 section，用 data-start 和 data-duration 绑定时间戳
-3. 产品图片穿插在相关字幕的画面中
-4. 使用简单 CSS 渐变动画（fadeIn）
-5. 整体风格：简洁现代，深色背景，白色文字
-6. 字幕文字要大且清晰（适合手机观看）
-7. 音频轨道引用：{audio_path}
-8. 音频总时长：{total_duration}
+1. 严格按照上面的 HyperFrames composition 格式
+2. 每句 SRT 字幕对应一个 clip 元素，data-start 和 data-duration 必须与 SRT 时间戳一致
+3. 产品图片用 <img src="images/01.png"> 引用（images 目录与 HTML 同级）
+4. 整体风格：深色背景，白色大字，适合手机竖屏观看
+5. 音频 src="audio.mp3"（与 HTML 同目录）
 
-HyperFrames HTML 结构要求：
-- 根元素：<div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
-- 每个画面：<section class="frame" data-start="X" data-duration="Y" data-track-index="0">
-- 音频：<audio data-start="0" data-duration="{total_duration}" data-track-index="1" src="audio.mp3">
-
-请直接输出完整的 HTML 文件内容，不要加任何前缀说明。
+请直接输出完整的 HTML 文件内容，从 <!DOCTYPE html> 开始，不要加任何前缀说明或代码块标记。
