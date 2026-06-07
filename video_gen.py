@@ -2,6 +2,7 @@
 
 import subprocess
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -65,12 +66,16 @@ def render_video(
             "--output", str(output_path),
         ]
 
+        # Windows 上 npx 实际是 npx.cmd，需要 shell=True 才能找到
+        use_shell = sys.platform == "win32"
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=300,  # 5 分钟超时
             cwd=html_path.parent,
+            shell=use_shell,
         )
 
         if result.returncode == 0:
