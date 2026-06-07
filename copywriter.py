@@ -62,6 +62,8 @@ def generate_copy_srt(product: dict, style_key: str = "style_a") -> tuple[str, s
             max_tokens=2000,
         )
         raw_output = response.choices[0].message.content.strip()
+        # 调试：显示 LLM 原始输出的前 200 字符
+        print(f"   📝 LLM 输出预览: {raw_output[:200]}...")
     except Exception as e:
         print(f"   ❌ API 调用失败: {e}")
         return None, None
