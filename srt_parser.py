@@ -18,8 +18,8 @@ class SrtEntry:
 
     def to_srt_block(self) -> str:
         """转回 SRT 格式文本块。"""
-        start_str = _seconds_to_srt_time(self.start)
-        end_str = _seconds_to_srt_time(self.end)
+        start_str = seconds_to_srt_time(self.start)
+        end_str = seconds_to_srt_time(self.end)
         return f"{self.index}\n{start_str} --> {end_str}\n{self.text}\n"
 
 
@@ -35,7 +35,7 @@ def _srt_time_to_seconds(time_str: str) -> float:
     return hours * 3600 + minutes * 60 + seconds
 
 
-def _seconds_to_srt_time(seconds: float) -> str:
+def seconds_to_srt_time(seconds: float) -> str:
     """将秒数转换为 SRT 时间格式 (HH:MM:SS,mmm)。"""
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
