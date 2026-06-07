@@ -64,17 +64,22 @@ HyperFrames Composition 格式规范：
 <body>
 <div id="stage" data-composition-id="product-video" data-start="0" data-width="1080" data-height="1920">
 
-  <div class="clip" data-start="0" data-duration="3.2" data-track-index="0">
+  <div class="clip" id="scene-1" data-start="0" data-duration="3.2" data-track-index="0">
     <div class="subtitle">第一句字幕内容</div>
   </div>
 
-  <div class="clip" data-start="3.2" data-duration="4.3" data-track-index="0">
+  <div class="clip" id="scene-2" data-start="3.2" data-duration="4.3" data-track-index="0">
     <div class="subtitle">第二句字幕内容</div>
   </div>
 
-  <audio data-start="0" data-duration="30" data-track-index="1" data-volume="1" src="audio.mp3"></audio>
+  <audio id="bgm" data-start="0" data-duration="30" data-track-index="1" data-volume="1" src="audio.mp3"></audio>
 
 </div>
+<script>
+// 注册 timeline，HyperFrames 需要这个
+window.__timelines = window.__timelines || {};
+window.__timelines["product-video"] = gsap.timeline({ paused: true });
+</script>
 </body>
 </html>
 

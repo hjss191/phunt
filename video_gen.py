@@ -53,9 +53,9 @@ def render_video(
     if not audio_dest.exists():
         shutil.copy2(audio_path, audio_dest)
 
-    # HyperFrames 默认查找 index.html，如果文件名不是 index.html 则创建副本
+    # HyperFrames 默认查找 index.html，必须创建 index.html
     index_path = html_path.parent / "index.html"
-    if html_path.name != "index.html" and not index_path.exists():
+    if not index_path.exists():
         shutil.copy2(html_path, index_path)
 
     print("  🎬  渲染视频...")
@@ -86,6 +86,17 @@ def render_video(
         )
 
         if result.returncode == 0:
+            # HyperFrames 默认输出到 renders 子目录，需要移动到目标位置
+            renders_dir = project_dir / "renders"
+            if renders_dir.exists():
+                # 找到最新的 mp4 文件
+                mp4_files = list(renders_dir.glob("*.mp4"))
+                if mp4_files:
+                    latest_mp4 = max(mp4_files, key=lambda f: f.stat().st_mtime)
+                    shutil.move(str(latest_mp4), str(output_path))
+                    print(f"   ✅ 视频渲染完成: {output_path.name}")
+                    return output_path
+            # 如果找不到，返回原路径
             print(f"   ✅ 视频渲染完成: {output_path.name}")
             return output_path
         else:
