@@ -1,9 +1,31 @@
 """Voice generation — converts copy text to audio using MiMo TTS API."""
 
 import base64
+import re
 from pathlib import Path
 from openai import OpenAI
 from config import MIMO_TTS_API_KEY, MIMO_TTS_BASE_URL
+
+
+def strip_markdown(text: str) -> str:
+    """Remove markdown formatting for clean TTS reading."""
+    # Remove headers: ### or **bold**
+    text = re.sub(r'#{1,6}\s+', '', text)
+    # Remove bold/italic markers
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+    # Remove links: [text](url) -> text
+    text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
+    # Remove bare URLs
+    text = re.sub(r'https?://\S+', '', text)
+    # Remove bullet points
+    text = re.sub(r'^\s*[-*]\s+', '', text, flags=re.MULTILINE)
+    # Remove blockquotes
+    text = re.sub(r'^\s*>\s+', '', text, flags=re.MULTILINE)
+    # Remove horizontal rules
+    text = re.sub(r'^-{3,}$', '', text, flags=re.MULTILINE)
+    # Clean up extra blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def generate_voice(text: str, output_path: Path) -> Path:
@@ -16,6 +38,7 @@ def generate_voice(text: str, output_path: Path) -> Path:
     Returns:
         Path to the generated audio file.
     """
+    clean_text = strip_markdown(text)
     client = OpenAI(api_key=MIMO_TTS_API_KEY, base_url=MIMO_TTS_BASE_URL)
 
     completion = client.chat.completions.create(
@@ -27,7 +50,7 @@ def generate_voice(text: str, output_path: Path) -> Path:
             },
             {
                 "role": "assistant",
-                "content": text,
+                "content": clean_text,
             },
         ],
         audio={
