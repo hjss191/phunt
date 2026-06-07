@@ -1,13 +1,14 @@
 """Product Hunt GraphQL API client — fetch today's top products."""
 
 import requests
+from datetime import datetime, timezone, timedelta
 from config import PHUNT_API_TOKEN
 
 API_URL = "https://api.producthunt.com/v2/api/graphql"
 
 QUERY = """
-query GetTodayPosts($first: Int!) {
-  posts(order: VOTES, first: $first) {
+query GetTodayPosts($first: Int!, $postedAfter: DateTime) {
+  posts(order: VOTES, first: $first, postedAfter: $postedAfter) {
     edges {
       node {
         id
@@ -33,6 +34,15 @@ query GetTodayPosts($first: Int!) {
 """
 
 
+def _get_today_pt() -> str:
+    """Get today's date in Product Hunt time (Pacific Time) as ISO string."""
+    # Product Hunt uses Pacific Time (UTC-7 or UTC-8 depending on DST)
+    # Use UTC-7 (PDT) as rough approximation
+    pt_now = datetime.now(timezone(timedelta(hours=-7)))
+    today_start = pt_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return today_start.isoformat()
+
+
 def fetch_top_products(count: int = 5) -> list[dict]:
     """Fetch top products from Product Hunt.
 
@@ -43,7 +53,7 @@ def fetch_top_products(count: int = 5) -> list[dict]:
         "Authorization": f"Bearer {PHUNT_API_TOKEN}",
         "Content-Type": "application/json",
     }
-    payload = {"query": QUERY, "variables": {"first": count}}
+    payload = {"query": QUERY, "variables": {"first": count, "postedAfter": _get_today_pt()}}
 
     resp = requests.post(API_URL, json=payload, headers=headers, timeout=30)
     resp.raise_for_status()
