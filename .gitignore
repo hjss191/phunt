@@ -4,3 +4,15 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Temporary files
+*.html
+!templates/*.html
+new.txt
+test_*.py
+
+# Design docs
+docs/
+
+# Claude Code
+CLAUDE.md
