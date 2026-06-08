@@ -39,4 +39,14 @@ def download_product_images(product: dict, output_dir: Path) -> dict[str, Path]:
                 print(f"  ⚠️  下载失败 ({filename}): {e}")
                 results[f"{i:02d}"] = None
 
+    # Extract color palette from downloaded images
+    try:
+        from palette import extract_palette, save_palette
+        palette = extract_palette(images_dir)
+        palette_path = output_dir / "palette.json"
+        save_palette(palette, palette_path)
+        print(f"  🎨 配色提取完成: {palette_path.name}")
+    except Exception as e:
+        print(f"  ⚠️  配色提取失败: {e}")
+
     return results

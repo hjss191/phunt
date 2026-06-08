@@ -1,15 +1,33 @@
 """Main entry point — orchestrates the daily workflow with video generation."""
 
+# Add NVIDIA DLL directories before any imports (for CTranslate2 CUDA support)
+import os as _os
+import site as _site
+_dll_dirs = []
+for _sp in _site.getsitepackages() + [_site.getusersitepackages()]:
+    for _sub in ("nvidia/cublas/bin", "nvidia/cuda_nvrtc/bin"):
+        _dll_dir = _os.path.join(_sp, _sub)
+        if _os.path.isdir(_dll_dir):
+            _dll_dirs.append(_dll_dir)
+if _dll_dirs:
+    _os.environ["PATH"] = ";".join(_dll_dirs) + ";" + _os.environ.get("PATH", "")
+    _os.environ["CT2_CUDA_LIBRARY_PATH"] = ";".join(_dll_dirs)
+    for _d in _dll_dirs:
+        _os.add_dll_directory(_d)
+
 DEFAULT_STYLE = "style_a"
+
+import json
+from pathlib import Path
 
 from config import validate_config
 from phunt_client import fetch_top_products, display_products, select_product
-from copywriter import generate_copy_srt
+from copywriter import generate_copy_plain
 from voice_gen import generate_voice
 from image_gen import download_product_images
 from html_gen import generate_html
 from video_gen import render_video, check_hyperframes_available
-from formatter import get_output_dir, save_srt_copy, print_summary
+from formatter import get_output_dir, print_summary
 
 
 def main():
@@ -18,72 +36,115 @@ def main():
     print("  🚀 Product Hunt 每日精选 → 视频内容生成")
     print("=" * 50)
 
-    # Step 0: 检查配置
+    # ── Stage 0: 检查配置 ──────────────────────────────────────
     print("\n📋 检查配置...")
     validate_config()
     print("   ✅ 配置检查通过")
 
-    # Step 1: 拉取产品
+    # ── Stage 1: 拉取产品 ──────────────────────────────────────
     print("\n📡 拉取 Product Hunt 今日 Top 5...")
     products = fetch_top_products(5)
     display_products(products)
 
-    # Step 2: 选择产品
+    # ── Stage 2: 选择产品 ──────────────────────────────────────
     product = select_product(products)
     print(f"\n✅ 已选择: {product['name']}")
     print(f"   {product['tagline']}")
 
-    # Step 3: 生成文案（SRT 格式）
-    print("\n✍️  开始生成文案（SRT 格式）...")
-    srt_text, plain_text = generate_copy_srt(product, DEFAULT_STYLE)
-    if srt_text is None:
-        print("   ❌ 文案生成失败，无法继续")
+    # ── Stage 3: 生成文案 ──────────────────────────────────────
+    print("\n✍️  生成文案...")
+    plain_text = generate_copy_plain(product, DEFAULT_STYLE)
+    if not plain_text:
+        print("   ❌ 文案生成失败（空内容），无法继续")
         return
     print("   ✅ 文案生成完成")
 
-    # Step 4: 保存文案
     output_dir = get_output_dir()
-    srt_path, txt_path = save_srt_copy(srt_text, plain_text, DEFAULT_STYLE, output_dir)
-    print(f"   📄 SRT: {srt_path.name}")
-    print(f"   📄 TXT: {txt_path.name}")
+    txt_path = output_dir / "copy" / f"{DEFAULT_STYLE}.txt"
+    txt_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(plain_text)
+    print(f"   📄 已保存: {txt_path.resolve()}")
+    print(f"\n  文案预览:\n{plain_text[:500]}...")
 
-    # Step 5: 生成配音
-    print("\n🎙️  开始生成配音...")
+    # ── 人工审核文案 ─────────────────────────────────────────
+    print(f"\n{'─' * 50}")
+    print(f"  请打开文件审核并修改文案:")
+    print(f"  {txt_path.resolve()}")
+    print(f"  修改完成后保存文件，然后按回车继续...")
+    input()
+
+    # 重新读取修改后的文案
+    plain_text = txt_path.read_text(encoding="utf-8")
+    print(f"   📄 已加载修改后文案 ({len(plain_text)} 字)")
+
+    # ── Stage 4: 生成配音 ──────────────────────────────────────
+    print("\n🎙️  生成 TTS 配音...")
     audio_path = output_dir / "audio" / f"{DEFAULT_STYLE}.mp3"
     generate_voice(plain_text, audio_path)
-    print("   ✅ 配音生成完成")
+    print(f"   ✅ 配音生成完成: {audio_path.name}")
 
-    # Step 6: 下载产品图片
-    print("\n🖼️  下载产品截图...")
+    # ── Stage 5: Whisper 时间对齐 ──────────────────────────────
+    print("\n🎯 Whisper 时间对齐...")
+    use_alignment = None
+    try:
+        from aligner import align_plain, save_aligned_srt, save_alignment_json
+
+        alignment = align_plain(audio_path, plain_text)
+        save_aligned_srt(alignment, output_dir / "copy" / f"{DEFAULT_STYLE}_aligned.srt")
+        save_alignment_json(alignment, output_dir / "alignment.json")
+        print(f"   ✅ 对齐完成: {len(alignment)} 段, 总时长 {alignment[-1][2]:.1f}s")
+        use_alignment = alignment
+    except Exception as e:
+        print(f"   ⚠️  对齐失败 ({e})，无法继续")
+        return
+
+    # ── Stage 6: 下载产品图片 + 提取配色 ──────────────────────
+    print("\n🖼️  下载产品截图 + 提取配色...")
     image_files = download_product_images(product, output_dir)
     image_paths = [str(p) for p in image_files.values() if p]
     print(f"   ✅ 下载完成 ({len(image_paths)} 张)")
 
-    # Step 7: 生成 HTML
-    print("\n🌐 生成 HyperFrames HTML...")
-    html_path = output_dir / "html" / f"{DEFAULT_STYLE}.html"
-    generate_html(product, srt_text, image_paths, str(audio_path), html_path)
-    print("   ✅ HTML 生成完成")
+    palette = None
+    try:
+        with open(output_dir / "palette.json", "r", encoding="utf-8") as f:
+            palette = json.load(f)
+        print(f"   🎨 配色: bg={palette['bg']} accent={palette['accent']}")
+    except Exception:
+        print("   ⚠️  配色数据不可用，无法继续")
+        return
 
-    # Step 8: 渲染视频（如果 HyperFrames 可用）
+    # ── Stage 7: 生成 HTML ─────────────────────────────────────
+    print("\n🌐 生成 HyperFrames HTML...")
+    html_path = output_dir / "html" / "index.html"
+
+    generate_html(
+        product=product,
+        alignment=use_alignment,
+        palette=palette,
+        image_paths=image_paths,
+        audio_path=str(audio_path),
+        output_path=html_path,
+    )
+
+    # ── Stage 8: 渲染视频 ─────────────────────────────────────
     video_path = None
-    if check_hyperframes_available():
+    if not check_hyperframes_available():
+        print("\n⚠️  HyperFrames 未安装，跳过视频渲染")
+        print("   安装方法: npm install -g hyperframes")
+    else:
         print("\n🎬 渲染视频...")
         video_path = output_dir / "video" / f"{DEFAULT_STYLE}.mp4"
         video_path = render_video(html_path, audio_path, video_path)
         if video_path:
-            print("   ✅ 视频渲染完成")
+            print(f"   ✅ 视频渲染完成: {video_path}")
         else:
             print("   ⚠️  视频渲染失败，但 HTML 文件已生成")
-    else:
-        print("\n⚠️  HyperFrames 未安装，跳过视频渲染")
-        print("   安装方法: npm install -g hyperframes")
-        print("   HTML 文件已生成，可手动渲染")
 
-    # 输出摘要
+    # ── 输出摘要 ───────────────────────────────────────────────
     print_summary(
         output_dir,
-        {DEFAULT_STYLE: (srt_path, txt_path)},
+        {DEFAULT_STYLE: txt_path},
         {DEFAULT_STYLE: audio_path},
         image_files,
         {DEFAULT_STYLE: html_path},

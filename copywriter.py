@@ -59,7 +59,7 @@ def generate_copy_srt(product: dict, style_key: str = "style_a") -> tuple[str, s
                 {"role": "user", "content": prompt},
             ],
             temperature=0.8,
-            max_tokens=2000,
+            max_tokens=10000,
         )
         raw_output = response.choices[0].message.content.strip()
         # 调试：显示 LLM 原始输出的前 200 字符
@@ -102,3 +102,56 @@ def generate_copies(product: dict) -> dict[str, tuple[str, str]]:
         results[style_key] = (srt_text, plain_text)
 
     return results
+
+
+def generate_copy_plain(product: dict, style_key: str = "style_a") -> str | None:
+    """Generate plain text copy (no SRT formatting) for a product.
+
+    Args:
+        product: Product dict from phunt_client.
+        style_key: Which style to use (default: style_a 口语风).
+
+    Returns:
+        Plain text string, or None on failure.
+    """
+    client = OpenAI(api_key=MIMO_API_KEY, base_url=MIMO_BASE_URL)
+    templates = load_templates()
+    style = templates["styles"][style_key]
+
+    print(f"  ✍️  生成 {style['name']}文案...")
+    prompt = build_prompt(product, style)
+
+    try:
+        response = client.chat.completions.create(
+            model="mimo-v2.5-pro",
+            messages=[
+                {"role": "system", "content": style["system_prompt"]},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.8,
+            max_tokens=10000,
+        )
+        choice = response.choices[0]
+        raw_output = choice.message.content
+        print(f"   🔍 finish_reason: {choice.finish_reason}")
+        print(f"   🔍 content type: {type(raw_output)}, repr: {repr(raw_output)[:200]}")
+        if not raw_output or not raw_output.strip():
+            print("   ❌ LLM 返回空内容")
+            return None
+        raw_output = raw_output.strip()
+        print(f"   📝 LLM 输出预览: {raw_output[:200]}...")
+    except Exception as e:
+        print(f"   ❌ API 调用失败: {e}")
+        return None
+
+    # If LLM returned SRT format, extract plain text
+    entries = parse_srt(raw_output)
+    if entries:
+        plain_text = extract_text(entries)
+        print(f"   ✅ 解析到 {len(entries)} 条句子")
+    else:
+        plain_text = raw_output
+        line_count = len([l for l in plain_text.split("\n") if l.strip()])
+        print(f"   ✅ 生成完成 ({line_count} 行)")
+
+    return plain_text if plain_text.strip() else None

@@ -2,6 +2,7 @@
 
 import base64
 import re
+import random
 from pathlib import Path
 from openai import OpenAI
 from config import MIMO_TTS_API_KEY, MIMO_TTS_BASE_URL
@@ -32,6 +33,9 @@ def generate_voice(text: str, output_path: Path) -> Path:
         Path to the generated audio file.
     """
     clean_text = strip_markdown(text)
+    print(f"   📝 TTS 文本预览: {clean_text[:100]}...")
+    print(f"   📝 TTS 文本长度: {len(clean_text)} 字")
+
     client = OpenAI(api_key=MIMO_TTS_API_KEY, base_url=MIMO_TTS_BASE_URL)
 
     completion = client.chat.completions.create(
@@ -39,7 +43,7 @@ def generate_voice(text: str, output_path: Path) -> Path:
         messages=[
             {
                 "role": "user",
-                "content": "用自然亲切的语调朗读，语速适中，像朋友分享好东西一样。",
+                "content": "逐字朗读以下文本，不要修改、省略或改写任何内容。语速适中，语调自然。",
             },
             {
                 "role": "assistant",

@@ -1,0 +1,7 @@
+hyperframes HTML 渲染成MP4 视频
+
+核心逻辑STR字幕充当画面和字幕的桥梁
+
+
+Whisper  解决STR 字幕时间轴
+生成的STR字幕文件喂给CC，告诉他用时间轴来生成HTML 页面

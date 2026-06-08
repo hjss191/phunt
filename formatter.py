@@ -55,7 +55,7 @@ def save_srt_copy(srt_text: str, plain_text: str, style_key: str, output_dir: Pa
 
 def print_summary(
     output_dir: Path,
-    srt_files: dict[str, tuple[Path, Path]],
+    copy_files: dict[str, Path],
     audio_files: dict[str, Path],
     image_files: dict[str, Path],
     html_files: dict[str, Path] = None,
@@ -65,9 +65,9 @@ def print_summary(
     print(f"\n✅ 所有内容已生成到: {output_dir}\n")
 
     print("📄 文案文件:")
-    for style_key, (srt_path, txt_path) in srt_files.items():
-        print(f"   {srt_path.relative_to(output_dir)}")
-        print(f"   {txt_path.relative_to(output_dir)}")
+    for style_key, path in copy_files.items():
+        if path:
+            print(f"   {path.relative_to(output_dir)}")
 
     print("\n🎙️  音频文件:")
     for style_key, path in audio_files.items():
