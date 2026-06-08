@@ -15,14 +15,38 @@ if _dll_dirs:
     for _d in _dll_dirs:
         _os.add_dll_directory(_d)
 
-DEFAULT_STYLE = "style_a"
-
 import json
 from pathlib import Path
 
 from config import validate_config
 from phunt_client import fetch_top_products, display_products, select_product
-from copywriter import generate_copy_plain
+from copywriter import generate_copy_plain, load_templates
+
+
+def select_style() -> str:
+    """Let user pick a writing style. Returns style_key."""
+    templates = load_templates()
+    styles = templates["styles"]
+    style_keys = list(styles.keys())
+
+    print("\n🎨 选择文案风格:")
+    for i, key in enumerate(style_keys, 1):
+        s = styles[key]
+        print(f"   {i}) {s['name']} — {s['description']}")
+
+    while True:
+        choice = input(f"\n  请选择 [1-{len(style_keys)}]，直接回车默认 1: ").strip()
+        if not choice:
+            return style_keys[0]
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(style_keys):
+                selected = style_keys[idx]
+                print(f"   ✅ 已选择: {styles[selected]['name']}")
+                return selected
+        except ValueError:
+            pass
+        print("   ⚠️  无效输入，请重新选择")
 from voice_gen import generate_voice
 from image_gen import download_product_images
 from html_gen import generate_html
@@ -51,16 +75,19 @@ def main():
     print(f"\n✅ 已选择: {product['name']}")
     print(f"   {product['tagline']}")
 
+    # ── Stage 2.5: 选择风格 ────────────────────────────────────
+    style_key = select_style()
+
     # ── Stage 3: 生成文案 ──────────────────────────────────────
     print("\n✍️  生成文案...")
-    plain_text = generate_copy_plain(product, DEFAULT_STYLE)
+    plain_text = generate_copy_plain(product, style_key)
     if not plain_text:
         print("   ❌ 文案生成失败（空内容），无法继续")
         return
     print("   ✅ 文案生成完成")
 
     output_dir = get_output_dir()
-    txt_path = output_dir / "copy" / f"{DEFAULT_STYLE}.txt"
+    txt_path = output_dir / "copy" / f"{style_key}.txt"
     txt_path.parent.mkdir(parents=True, exist_ok=True)
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(plain_text)
@@ -80,7 +107,7 @@ def main():
 
     # ── Stage 4: 生成配音 ──────────────────────────────────────
     print("\n🎙️  生成 TTS 配音...")
-    audio_path = output_dir / "audio" / f"{DEFAULT_STYLE}.mp3"
+    audio_path = output_dir / "audio" / f"{style_key}.mp3"
     generate_voice(plain_text, audio_path)
     print(f"   ✅ 配音生成完成: {audio_path.name}")
 
@@ -91,7 +118,7 @@ def main():
         from aligner import align_plain, save_aligned_srt, save_alignment_json
 
         alignment = align_plain(audio_path, plain_text)
-        save_aligned_srt(alignment, output_dir / "copy" / f"{DEFAULT_STYLE}_aligned.srt")
+        save_aligned_srt(alignment, output_dir / "copy" / f"{style_key}_aligned.srt")
         save_alignment_json(alignment, output_dir / "alignment.json")
         print(f"   ✅ 对齐完成: {len(alignment)} 段, 总时长 {alignment[-1][2]:.1f}s")
         use_alignment = alignment
@@ -134,7 +161,7 @@ def main():
         print("   安装方法: npm install -g hyperframes")
     else:
         print("\n🎬 渲染视频...")
-        video_path = output_dir / "video" / f"{DEFAULT_STYLE}.mp4"
+        video_path = output_dir / "video" / f"{style_key}.mp4"
         video_path = render_video(html_path, audio_path, video_path)
         if video_path:
             print(f"   ✅ 视频渲染完成: {video_path}")
@@ -144,11 +171,11 @@ def main():
     # ── 输出摘要 ───────────────────────────────────────────────
     print_summary(
         output_dir,
-        {DEFAULT_STYLE: txt_path},
-        {DEFAULT_STYLE: audio_path},
+        {style_key: txt_path},
+        {style_key: audio_path},
         image_files,
-        {DEFAULT_STYLE: html_path},
-        {DEFAULT_STYLE: video_path} if video_path else None,
+        {style_key: html_path},
+        {style_key: video_path} if video_path else None,
     )
 
 

@@ -31,6 +31,7 @@ def build_prompt(product: dict, style: dict) -> str:
         votes=product["votes"],
         topics=topics_str,
         style_description=style["description"],
+        style_structure=style["structure"],
     )
 
 
