@@ -22,6 +22,16 @@ def load_srt_prompt_template() -> str:
 def build_prompt(product: dict, style: dict) -> str:
     """Build the user prompt for SRT generation."""
     topics_str = ", ".join(product["topics"]) if product["topics"] else "N/A"
+    # Build maker's comment string (first comment is usually from the maker)
+    comments = product.get("comments", [])
+    if comments:
+        # Strip HTML tags for cleaner text
+        import re
+        maker_comment = comments[0]["body"]
+        maker_comment = re.sub(r"<[^>]+>", "", maker_comment)  # Remove HTML
+        maker_comment = maker_comment.strip()
+    else:
+        maker_comment = "（无创始人评论）"
     template = load_srt_prompt_template()
     return template.format(
         name=product["name"],
@@ -32,6 +42,7 @@ def build_prompt(product: dict, style: dict) -> str:
         topics=topics_str,
         style_description=style["description"],
         style_structure=style["structure"],
+        maker_comment=maker_comment,
     )
 
 

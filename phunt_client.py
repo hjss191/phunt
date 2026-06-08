@@ -31,6 +31,17 @@ query GetTodayPosts($first: Int!, $postedAfter: DateTime) {
             }
           }
         }
+        comments(first: 5, order: NEWEST) {
+          edges {
+            node {
+              body
+              user {
+                name
+                username
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -63,10 +74,20 @@ def fetch_top_products(count: int = 5) -> list[dict]:
     resp.raise_for_status()
 
     data = resp.json()
+    if "errors" in data:
+        print(f"   ❌ API 错误: {data['errors']}")
+        return []
     products = []
     for edge in data["data"]["posts"]["edges"]:
         node = edge["node"]
         topics = [t["node"]["name"] for t in node["topics"]["edges"]]
+        # Extract maker's comment (first comment is usually from the maker)
+        comments = []
+        for c in node.get("comments", {}).get("edges", []):
+            comments.append({
+                "body": c["node"]["body"],
+                "user": c["node"]["user"]["name"],
+            })
         products.append({
             "name": node["name"],
             "tagline": node["tagline"],
@@ -79,6 +100,7 @@ def fetch_top_products(count: int = 5) -> list[dict]:
                 {"url": m["url"], "type": m["type"]}
                 for m in node.get("media", [])
             ],
+            "comments": comments,
         })
     return products
 
