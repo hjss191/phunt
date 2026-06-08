@@ -66,11 +66,15 @@ cp .env.example .env
 # Edit .env file and fill in your API keys
 ```
 
-### 4. 安装 HyperFrames（可选 / Optional）
+### 4. 安装 HyperFrames（必须全局安装 / Must install globally）
 
 ```bash
 npm install -g hyperframes
 ```
+
+⚠️ **必须使用 `-g` 全局安装**，否则渲染时 `npx` 会提示确认导致卡住。
+
+⚠️ **Must use `-g` for global installation**, otherwise `npx` will prompt for confirmation and block the rendering process.
 
 ---
 
