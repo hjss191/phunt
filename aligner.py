@@ -94,18 +94,22 @@ def _match_to_original(whisper_segments: list[dict],
         seg_text = _clean(seg["text"])
         matched_in_seg = []
 
-        # Find all original sentences contained in this segment
+        # Find all original sentences that match this segment
         for i, sent in enumerate(original_sentences):
             if i in used:
                 continue
             sent_clean = _clean(sent)
-            # Check if the original sentence is contained in the segment
+            # Check both directions:
+            # 1. Original sentence contained in segment
+            # 2. Segment contained in original sentence
             if len(sent_clean) >= 2 and sent_clean in seg_text:
                 matched_in_seg.append(i)
+            elif len(seg_text) >= 2 and seg_text in sent_clean:
+                matched_in_seg.append(i)
             else:
-                # Fallback: use similarity score with lower threshold
+                # Fallback: use similarity score
                 score = _similarity(seg["text"], sent)
-                if score >= 0.5:
+                if score >= 0.3:
                     matched_in_seg.append(i)
 
         if matched_in_seg:
