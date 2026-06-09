@@ -130,7 +130,7 @@ def generate_ai_images(product: dict, copy_text: str, palette: dict,
                         "input": {"prompt": prompt},
                         "parameters": {
                             "style": "<auto>",
-                            "size": "1080*1920",
+                            "size": "720*1280",
                             "n": 1,
                         },
                     },
@@ -138,7 +138,7 @@ def generate_ai_images(product: dict, copy_text: str, palette: dict,
                 resp.raise_for_status()
                 task_id = resp.json()["output"]["task_id"]
 
-                # Poll for result
+                # Poll for result (max 60 seconds)
                 import time
                 for _ in range(30):
                     time.sleep(2)
@@ -147,9 +147,10 @@ def generate_ai_images(product: dict, copy_text: str, palette: dict,
                         headers={"Authorization": f"Bearer {TONGYI_API_KEY}"},
                     )
                     result.raise_for_status()
-                    status = result.json()["output"]["task_status"]
+                    output = result.json()["output"]
+                    status = output["task_status"]
                     if status == "SUCCEEDED":
-                        img_url = result.json()["output"]["results"][0]["url"]
+                        img_url = output["results"][0]["url"]
                         img_resp = client.get(img_url)
                         img_resp.raise_for_status()
                         with open(filepath, "wb") as f:
@@ -158,10 +159,10 @@ def generate_ai_images(product: dict, copy_text: str, palette: dict,
                         print(f"    ✅ 完成: {filename}")
                         break
                     elif status == "FAILED":
-                        print(f"    ❌ 生成失败")
+                        print(f"    ❌ 生成失败: {output.get('message', '')}")
                         break
                 else:
-                    print(f"    ⚠️  超时")
+                    print(f"    ⚠️  超时 (60秒)")
 
             except Exception as e:
                 print(f"    ❌ 异常: {e}")
