@@ -23,7 +23,7 @@ from faster_whisper import WhisperModel
 def _clean(s: str) -> str:
     """Remove punctuation for matching."""
     return re.sub(
-        r"[，。？！：；、""''（）…—～~《》\s,\.!\?;:\'\"\-]", "", s
+        r"[，。？！：；、“”‘’（）…—～~《》\s,\.!\?;:\'\"\-]", "", s
     )
 
 
