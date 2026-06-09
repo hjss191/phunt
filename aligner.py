@@ -32,8 +32,8 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _clean(a), _clean(b)).ratio()
 
 
-def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
-    """Transcribe audio with Whisper, return segments with timestamps."""
+def _whisper_duration(audio_path: Path, model_name: str = "large-v3-turbo") -> float:
+    """Get total audio duration using Whisper."""
     # Auto-detect GPU via CTranslate2
     try:
         import ctranslate2
@@ -53,64 +53,45 @@ def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
         temperature=0,
         no_speech_threshold=0.3,
         condition_on_previous_text=False,
-        word_timestamps=True,
     )
     print(f"  语言: {info.language} (概率: {info.language_probability:.3f})")
 
-    words = []
+    # Get total duration from last segment
+    last_end = 0.0
     for seg in segments:
-        for word in seg.words:
-            text = convert(word.word.strip(), "zh-cn")
-            if text:
-                words.append({
-                    "start": word.start,
-                    "end": word.end,
-                    "text": text,
-                })
+        last_end = max(last_end, seg.end)
 
-    return words
+    return last_end
 
 
-def _match_to_original(whisper_words: list[dict],
-                       original_sentences: list[str]) -> list[tuple]:
-    """Match Whisper word timestamps to original sentences.
+def _allocate_time(sentences: list[str], total_duration: float) -> list[tuple]:
+    """Allocate time proportionally based on character count.
 
-    Strategy: use word-level timestamps from Whisper to build sentence-level
-    timestamps for the original text. Each word is matched to the original
-    sentence that contains it.
+    Args:
+        sentences: List of original sentences.
+        total_duration: Total audio duration in seconds.
 
-    Returns list of (idx, start, end, original_text) tuples.
+    Returns:
+        List of (idx, start, end, text) tuples.
     """
+    # Count characters per sentence (excluding punctuation)
+    char_counts = []
+    for sent in sentences:
+        cleaned = _clean(sent)
+        char_counts.append(max(len(cleaned), 1))  # At least 1 char
+
+    total_chars = sum(char_counts)
+
+    # Allocate time proportionally
     results = []
+    current_time = 0.0
 
-    # Build a combined text from Whisper words
-    whisper_text = "".join(w["text"] for w in whisper_words)
-
-    # For each original sentence, find matching words
-    for i, sent in enumerate(original_sentences):
-        sent_clean = _clean(sent)
-        if not sent_clean:
-            continue
-
-        # Find words that contribute to this sentence
-        matched_words = []
-        for word in whisper_words:
-            word_clean = _clean(word["text"])
-            if word_clean and word_clean in sent_clean:
-                matched_words.append(word)
-
-        if matched_words:
-            # Use first and last matched word timestamps
-            start = matched_words[0]["start"]
-            end = matched_words[-1]["end"]
-            results.append((i + 1, start, end, sent))
-        else:
-            # No match found — use previous sentence's end time
-            if results:
-                prev_end = results[-1][2]
-                results.append((i + 1, prev_end, prev_end + 2.0, sent))
-            else:
-                results.append((i + 1, 0.0, 2.0, sent))
+    for i, (sent, count) in enumerate(zip(sentences, char_counts)):
+        duration = (count / total_chars) * total_duration
+        start = current_time
+        end = current_time + duration
+        results.append((i + 1, start, end, sent))
+        current_time = end
 
     return results
 
@@ -132,11 +113,11 @@ def _split_sentences(text: str) -> list[str]:
 
 def align_plain(audio_path: Path, plain_text: str,
                 model_name: str = "large-v3-turbo") -> list[tuple[int, float, float, str]]:
-    """Align plain text to TTS audio using Whisper word-level timestamps.
+    """Align plain text to TTS audio using Whisper duration.
 
-    1. Whisper transcribes audio → word-level timestamps
-    2. Each word is matched to the original sentence that contains it
-    3. Sentence timestamps = first word start to last word end
+    1. Whisper gets total audio duration
+    2. Time is allocated proportionally based on character count
+    3. No text matching needed
 
     Args:
         audio_path: Path to the TTS audio file (mp3).
@@ -149,14 +130,12 @@ def align_plain(audio_path: Path, plain_text: str,
     original_sentences = _split_sentences(plain_text)
     print(f"  原文分句: {len(original_sentences)} 句")
 
-    whisper_words = _whisper_transcribe(audio_path, model_name)
-    print(f"  Whisper 词数: {len(whisper_words)} 词, "
-          f"覆盖 {whisper_words[0]['start']:.1f}-{whisper_words[-1]['end']:.1f}s")
+    total_duration = _whisper_duration(audio_path, model_name)
+    print(f"  音频时长: {total_duration:.1f}s")
 
-    results = _match_to_original(whisper_words, original_sentences)
+    results = _allocate_time(original_sentences, total_duration)
 
     # Stats
-    total_duration = results[-1][2] if results else 0
     print(f"  对齐完成: {len(results)} 句, 总时长 {total_duration:.1f}s")
 
     return results
