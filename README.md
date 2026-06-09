@@ -127,6 +127,43 @@ phunt/
 
 ---
 
+## Whisper 模型 / Whisper Model
+
+默认使用 `large-v3-turbo` 模型，需要 GPU 支持。
+
+Default model is `large-v3-turbo`, which requires GPU.
+
+### 无显卡用户 / No GPU Users
+
+如果没有显卡，使用较小的模型：
+
+If you don't have a GPU, use a smaller model:
+
+```python
+# 在 aligner.py 中修改 model_name 参数
+# Change model_name parameter in aligner.py
+
+# 推荐 / Recommended:
+model_name = "base"      # 最快，准确度一般 / Fastest, moderate accuracy
+model_name = "small"     # 平衡 / Balanced
+model_name = "medium"    # 较准，较慢 / More accurate, slower
+```
+
+或在调用时指定 / Or specify when calling:
+
+```python
+alignment = align_plain(audio_path, plain_text, model_name="base")
+```
+
+| 模型 / Model | 大小 / Size | 速度 / Speed | 准确度 / Accuracy |
+|-------------|------------|-------------|------------------|
+| `base` | 140MB | ⚡⚡⚡ | ⭐⭐ |
+| `small` | 460MB | ⚡⚡ | ⭐⭐⭐ |
+| `medium` | 1.5GB | ⚡ | ⭐⭐⭐⭐ |
+| `large-v3-turbo` | 3GB | ⚡ | ⭐⭐⭐⭐⭐ |
+
+---
+
 ## 依赖 / Dependencies
 
 - Python 3.10+
