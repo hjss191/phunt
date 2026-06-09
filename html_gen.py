@@ -222,7 +222,7 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
             return ""
         f = all_imgs[img_idx]
         img_idx += 1
-        return f"images/{f}"
+        return f"../images/{f}"
 
     # Extend scenes
     total = max(r[2] for r in alignment)
