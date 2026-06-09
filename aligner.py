@@ -32,8 +32,8 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _clean(a), _clean(b)).ratio()
 
 
-def _whisper_duration(audio_path: Path, model_name: str = "large-v3-turbo") -> float:
-    """Get total audio duration using Whisper."""
+def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
+    """Transcribe audio with Whisper, return segments with timestamps."""
     # Auto-detect GPU via CTranslate2
     try:
         import ctranslate2
@@ -56,42 +56,72 @@ def _whisper_duration(audio_path: Path, model_name: str = "large-v3-turbo") -> f
     )
     print(f"  语言: {info.language} (概率: {info.language_probability:.3f})")
 
-    # Get total duration from last segment
-    last_end = 0.0
+    result = []
     for seg in segments:
-        last_end = max(last_end, seg.end)
+        text = convert(seg.text.strip(), "zh-cn")
+        if text:
+            result.append({
+                "start": seg.start,
+                "end": seg.end,
+                "text": text,
+            })
 
-    return last_end
+    return result
 
 
-def _allocate_time(sentences: list[str], total_duration: float) -> list[tuple]:
-    """Allocate time proportionally based on character count.
+def _match_to_original(whisper_segments: list[dict],
+                       original_sentences: list[str]) -> list[tuple]:
+    """Match Whisper segments to original sentences.
 
-    Args:
-        sentences: List of original sentences.
-        total_duration: Total audio duration in seconds.
+    Strategy: each Whisper segment may contain multiple original sentences.
+    For each segment, find all original sentences that are contained in it
+    (using fuzzy matching). Each original sentence can only be used once.
 
-    Returns:
-        List of (idx, start, end, text) tuples.
+    Returns list of (idx, start, end, original_text) tuples.
     """
-    # Count characters per sentence (excluding punctuation)
-    char_counts = []
-    for sent in sentences:
-        cleaned = _clean(sent)
-        char_counts.append(max(len(cleaned), 1))  # At least 1 char
-
-    total_chars = sum(char_counts)
-
-    # Allocate time proportionally
+    used = set()
     results = []
-    current_time = 0.0
 
-    for i, (sent, count) in enumerate(zip(sentences, char_counts)):
-        duration = (count / total_chars) * total_duration
-        start = current_time
-        end = current_time + duration
-        results.append((i + 1, start, end, sent))
-        current_time = end
+    for seg in whisper_segments:
+        seg_text = _clean(seg["text"])
+        matched_in_seg = []
+
+        # Find all original sentences contained in this segment
+        for i, sent in enumerate(original_sentences):
+            if i in used:
+                continue
+            sent_clean = _clean(sent)
+            # Check if the original sentence is contained in the segment
+            if len(sent_clean) >= 2 and sent_clean in seg_text:
+                matched_in_seg.append(i)
+            else:
+                # Fallback: use similarity score with lower threshold
+                score = _similarity(seg["text"], sent)
+                if score >= 0.5:
+                    matched_in_seg.append(i)
+
+        if matched_in_seg:
+            # Distribute time evenly among matched sentences
+            duration = seg["end"] - seg["start"]
+            time_per_sent = duration / len(matched_in_seg)
+            for j, idx in enumerate(matched_in_seg):
+                used.add(idx)
+                start = seg["start"] + j * time_per_sent
+                end = start + time_per_sent
+                results.append((
+                    len(results) + 1,
+                    start,
+                    end,
+                    original_sentences[idx],
+                ))
+        else:
+            # No match found — use Whisper's own text
+            results.append((
+                len(results) + 1,
+                seg["start"],
+                seg["end"],
+                seg["text"],
+            ))
 
     return results
 
@@ -113,11 +143,11 @@ def _split_sentences(text: str) -> list[str]:
 
 def align_plain(audio_path: Path, plain_text: str,
                 model_name: str = "large-v3-turbo") -> list[tuple[int, float, float, str]]:
-    """Align plain text to TTS audio using Whisper duration.
+    """Align plain text to TTS audio using Whisper segments.
 
-    1. Whisper gets total audio duration
-    2. Time is allocated proportionally based on character count
-    3. No text matching needed
+    1. Whisper transcribes audio → segments with accurate timestamps
+    2. Each segment is matched to the best matching original sentence
+    3. Output: Whisper timestamps + original text
 
     Args:
         audio_path: Path to the TTS audio file (mp3).
@@ -130,13 +160,15 @@ def align_plain(audio_path: Path, plain_text: str,
     original_sentences = _split_sentences(plain_text)
     print(f"  原文分句: {len(original_sentences)} 句")
 
-    total_duration = _whisper_duration(audio_path, model_name)
-    print(f"  音频时长: {total_duration:.1f}s")
+    whisper_segments = _whisper_transcribe(audio_path, model_name)
+    print(f"  Whisper 段落: {len(whisper_segments)} 段, "
+          f"覆盖 {whisper_segments[0]['start']:.1f}-{whisper_segments[-1]['end']:.1f}s")
 
-    results = _allocate_time(original_sentences, total_duration)
+    results = _match_to_original(whisper_segments, original_sentences)
 
     # Stats
-    print(f"  对齐完成: {len(results)} 句, 总时长 {total_duration:.1f}s")
+    matched = sum(1 for r in results if r[3] in original_sentences)
+    print(f"  匹配: {matched}/{len(results)} 段, 总时长 {results[-1][2]:.1f}s")
 
     return results
 
