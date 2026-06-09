@@ -9,13 +9,17 @@ from pathlib import Path
 from zhconv import convert
 
 # Add NVIDIA DLL directories to search path (for CTranslate2 CUDA support)
+_dll_dirs = []
 for sp in site.getsitepackages() + [site.getusersitepackages()]:
-    nvidia_bin = os.path.join(sp, "nvidia", "cublas", "bin")
-    if os.path.isdir(nvidia_bin):
-        os.add_dll_directory(nvidia_bin)
-    nvidia_nvrtc = os.path.join(sp, "nvidia", "cuda_nvrtc", "bin")
-    if os.path.isdir(nvidia_nvrtc):
-        os.add_dll_directory(nvidia_nvrtc)
+    for sub in ("nvidia/cublas/bin", "nvidia/cuda_nvrtc/bin"):
+        dll_dir = os.path.join(sp, sub)
+        if os.path.isdir(dll_dir):
+            _dll_dirs.append(dll_dir)
+if _dll_dirs:
+    os.environ["PATH"] = ";".join(_dll_dirs) + ";" + os.environ.get("PATH", "")
+    os.environ["CT2_CUDA_LIBRARY_PATH"] = ";".join(_dll_dirs)
+    for d in _dll_dirs:
+        os.add_dll_directory(d)
 
 from faster_whisper import WhisperModel
 
