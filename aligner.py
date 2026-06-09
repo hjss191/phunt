@@ -71,10 +71,11 @@ def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
 
 def _match_to_original(whisper_segments: list[dict],
                        original_sentences: list[str]) -> list[tuple]:
-    """Match each Whisper segment to the best matching original sentence.
+    """Match Whisper segments to original sentences.
 
-    Strategy: for each Whisper segment, find the original sentence with highest
-    similarity. Each original sentence can only be used once (greedy matching).
+    Strategy: each Whisper segment may contain multiple original sentences.
+    For each segment, find all original sentences that are contained in it
+    (using fuzzy matching). Each original sentence can only be used once.
 
     Returns list of (idx, start, end, original_text) tuples.
     """
@@ -82,25 +83,37 @@ def _match_to_original(whisper_segments: list[dict],
     results = []
 
     for seg in whisper_segments:
-        best_score = 0.0
-        best_idx = -1
+        seg_text = _clean(seg["text"])
+        matched_in_seg = []
 
+        # Find all original sentences contained in this segment
         for i, sent in enumerate(original_sentences):
             if i in used:
                 continue
-            score = _similarity(seg["text"], sent)
-            if score > best_score:
-                best_score = score
-                best_idx = i
+            sent_clean = _clean(sent)
+            # Check if the original sentence is contained in the segment
+            if len(sent_clean) >= 2 and sent_clean in seg_text:
+                matched_in_seg.append(i)
+            else:
+                # Fallback: use similarity score with lower threshold
+                score = _similarity(seg["text"], sent)
+                if score >= 0.5:
+                    matched_in_seg.append(i)
 
-        if best_idx >= 0 and best_score >= 0.3:
-            used.add(best_idx)
-            results.append((
-                len(results) + 1,
-                seg["start"],
-                seg["end"],
-                original_sentences[best_idx],
-            ))
+        if matched_in_seg:
+            # Distribute time evenly among matched sentences
+            duration = seg["end"] - seg["start"]
+            time_per_sent = duration / len(matched_in_seg)
+            for j, idx in enumerate(matched_in_seg):
+                used.add(idx)
+                start = seg["start"] + j * time_per_sent
+                end = start + time_per_sent
+                results.append((
+                    len(results) + 1,
+                    start,
+                    end,
+                    original_sentences[idx],
+                ))
         else:
             # No match found — use Whisper's own text
             results.append((
