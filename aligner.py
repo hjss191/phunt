@@ -73,9 +73,10 @@ def _match_to_original(whisper_segments: list[dict],
                        original_sentences: list[str]) -> list[tuple]:
     """Match Whisper segments to original sentences.
 
-    Strategy: each Whisper segment may contain multiple original sentences.
-    For each segment, find all original sentences that are contained in it
-    (using fuzzy matching). Each original sentence can only be used once.
+    Strategy: each Whisper segment may contain multiple original sentences,
+    or a Whisper segment may be a substring of an original sentence.
+    For each segment, find the best matching original sentence.
+    Each original sentence can only be used once.
 
     Returns list of (idx, start, end, original_text) tuples.
     """
@@ -84,36 +85,36 @@ def _match_to_original(whisper_segments: list[dict],
 
     for seg in whisper_segments:
         seg_text = _clean(seg["text"])
-        matched_in_seg = []
+        best_score = 0.0
+        best_idx = -1
 
-        # Find all original sentences contained in this segment
         for i, sent in enumerate(original_sentences):
             if i in used:
                 continue
             sent_clean = _clean(sent)
-            # Check if the original sentence is contained in the segment
-            if len(sent_clean) >= 2 and sent_clean in seg_text:
-                matched_in_seg.append(i)
-            else:
-                # Fallback: use similarity score with lower threshold
-                score = _similarity(seg["text"], sent)
-                if score >= 0.5:
-                    matched_in_seg.append(i)
 
-        if matched_in_seg:
-            # Distribute time evenly among matched sentences
-            duration = seg["end"] - seg["start"]
-            time_per_sent = duration / len(matched_in_seg)
-            for j, idx in enumerate(matched_in_seg):
-                used.add(idx)
-                start = seg["start"] + j * time_per_sent
-                end = start + time_per_sent
-                results.append((
-                    len(results) + 1,
-                    start,
-                    end,
-                    original_sentences[idx],
-                ))
+            # Check both directions:
+            # 1. Original sentence contained in segment (segment has multiple sentences)
+            # 2. Segment contained in original sentence (segment is partial)
+            if len(sent_clean) >= 2 and sent_clean in seg_text:
+                score = 1.0  # Perfect containment
+            elif len(seg_text) >= 2 and seg_text in sent_clean:
+                score = 0.9  # Segment is part of original
+            else:
+                score = _similarity(seg["text"], sent)
+
+            if score > best_score:
+                best_score = score
+                best_idx = i
+
+        if best_idx >= 0 and best_score >= 0.3:
+            used.add(best_idx)
+            results.append((
+                len(results) + 1,
+                seg["start"],
+                seg["end"],
+                original_sentences[best_idx],
+            ))
         else:
             # No match found — use Whisper's own text
             results.append((
