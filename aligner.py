@@ -123,13 +123,13 @@ def align_plain(audio_path: Path, plain_text: str,
 
     for i, sent in enumerate(original_sentences):
         # Count characters in sentence (excluding punctuation)
-        sent_clean = re.sub(r'[，。？！：；、""''（）…—～~《》\s,\.!\?;:\'\"\-]', '', sent)
+        sent_clean = re.sub(r'[，。？！：；、“”‘’（）…—～~《》\s,\.!\?;:\'\"\-]', '', sent)
         char_count = max(len(sent_clean), 1)
 
         # Calculate how many words this sentence should get
         # (proportional to character count)
         total_chars = sum(
-            len(re.sub(r'[，。？！：；、""''（）…—～~《》\s,\.!\?;:\'\"\-]', '', s))
+            len(re.sub(r'[，。？！：；、“”‘’（）…—～~《》\s,\.!\?;:\'\"\-]', '', s))
             for s in original_sentences
         )
         word_count = max(1, round(char_count / total_chars * total_words))
