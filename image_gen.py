@@ -1,7 +1,9 @@
-"""Image fetcher — downloads product screenshots from Product Hunt."""
+"""Image fetcher — downloads product screenshots or generates AI images."""
 
 import httpx
+import json
 from pathlib import Path
+from config import TONGYI_API_KEY
 
 
 def download_product_images(product: dict, output_dir: Path) -> dict[str, Path]:
@@ -50,3 +52,118 @@ def download_product_images(product: dict, output_dir: Path) -> dict[str, Path]:
         print(f"  ⚠️  配色提取失败: {e}")
 
     return results
+
+
+def check_image_sufficiency(image_paths: dict, min_count: int = 6) -> bool:
+    """Check if we have enough images.
+
+    Args:
+        image_paths: Dict from download_product_images.
+        min_count: Minimum number of images needed.
+
+    Returns:
+        True if enough images, False otherwise.
+    """
+    valid = [p for p in image_paths.values() if p is not None]
+    return len(valid) >= min_count
+
+
+def generate_ai_images(product: dict, copy_text: str, palette: dict,
+                       output_dir: Path, count: int = 8) -> list[Path]:
+    """Generate images using 通义万相 API.
+
+    Args:
+        product: Product dict.
+        copy_text: The copy text for context.
+        palette: Color palette dict.
+        output_dir: Directory to save images.
+        count: Number of images to generate.
+
+    Returns:
+        List of generated image paths.
+    """
+    if not TONGYI_API_KEY:
+        print("  ⚠️  TONGYI_API_KEY 未配置，无法生成 AI 图片")
+        return []
+
+    images_dir = output_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build prompts based on product info
+    product_name = product["name"]
+    tagline = product.get("tagline", "")
+    accent = palette.get("accent", "#60a5fa")
+
+    # Create diverse prompts for different scenes
+    prompts = [
+        f"{product_name} product interface, modern UI design, clean and minimal, accent color {accent}",
+        f"{product_name} dashboard view, data visualization, professional tech product",
+        f"{product_name} mobile app screen, user-friendly interface, modern design",
+        f"{product_name} feature showcase, AI technology illustration, futuristic",
+        f"{product_name} user experience, happy users, productivity boost",
+        f"{product_name} team collaboration, workplace efficiency, digital transformation",
+        f"{product_name} AI automation, smart workflow, technology innovation",
+        f"{product_name} success metrics, growth chart, positive results",
+    ]
+
+    generated = []
+    print(f"  🎨 生成 AI 配图 ({count} 张)...")
+
+    with httpx.Client(timeout=120) as client:
+        for i in range(min(count, len(prompts))):
+            prompt = prompts[i]
+            filename = f"{i+1:02d}.png"
+            filepath = images_dir / filename
+
+            print(f"  🖼️  生成图片 {i+1}/{count}: {filename}...")
+            try:
+                # Call 通义万相 API
+                resp = client.post(
+                    "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis",
+                    headers={
+                        "Authorization": f"Bearer {TONGYI_API_KEY}",
+                        "Content-Type": "application/json",
+                        "X-DashScope-Async": "enable",
+                    },
+                    json={
+                        "model": "wanx-v1",
+                        "input": {"prompt": prompt},
+                        "parameters": {
+                            "style": "<auto>",
+                            "size": "1080*1920",
+                            "n": 1,
+                        },
+                    },
+                )
+                resp.raise_for_status()
+                task_id = resp.json()["output"]["task_id"]
+
+                # Poll for result
+                import time
+                for _ in range(30):
+                    time.sleep(2)
+                    result = client.get(
+                        f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}",
+                        headers={"Authorization": f"Bearer {TONGYI_API_KEY}"},
+                    )
+                    result.raise_for_status()
+                    status = result.json()["output"]["task_status"]
+                    if status == "SUCCEEDED":
+                        img_url = result.json()["output"]["results"][0]["url"]
+                        img_resp = client.get(img_url)
+                        img_resp.raise_for_status()
+                        with open(filepath, "wb") as f:
+                            f.write(img_resp.content)
+                        generated.append(filepath)
+                        print(f"    ✅ 完成: {filename}")
+                        break
+                    elif status == "FAILED":
+                        print(f"    ❌ 生成失败")
+                        break
+                else:
+                    print(f"    ⚠️  超时")
+
+            except Exception as e:
+                print(f"    ❌ 异常: {e}")
+
+    return generated

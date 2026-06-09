@@ -48,7 +48,7 @@ def select_style() -> str:
             pass
         print("   ⚠️  无效输入，请重新选择")
 from voice_gen import generate_voice
-from image_gen import download_product_images
+from image_gen import download_product_images, check_image_sufficiency, generate_ai_images
 from html_gen import generate_html
 from video_gen import render_video, check_hyperframes_available
 from formatter import get_output_dir, print_summary
@@ -140,6 +140,24 @@ def main():
     except Exception:
         print("   ⚠️  配色数据不可用，无法继续")
         return
+
+    # ── Stage 6.5: 检查图片数量 ───────────────────────────────
+    MIN_IMAGES = 6
+    if not check_image_sufficiency(image_files, MIN_IMAGES):
+        print(f"\n   ⚠️  图片不足 ({len(image_paths)} 张，建议 {MIN_IMAGES} 张以上)")
+        print(f"   选择配图方案:")
+        print(f"   1) 使用 AI 生成配图（风格统一）")
+        print(f"   2) 继续使用现有图片")
+        choice = input("\n  请选择 [1/2]，直接回车默认 1: ").strip()
+
+        if choice != "2":
+            print("\n  🎨 开始生成 AI 配图...")
+            ai_images = generate_ai_images(product, plain_text, palette, output_dir, MIN_IMAGES)
+            if ai_images:
+                image_paths = [str(p) for p in ai_images]
+                print(f"   ✅ AI 配图生成完成 ({len(image_paths)} 张)")
+            else:
+                print("   ⚠️  AI 配图生成失败，继续使用现有图片")
 
     # ── Stage 7: 生成 HTML ─────────────────────────────────────
     print("\n🌐 生成 HyperFrames HTML...")
