@@ -51,11 +51,11 @@ def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo",
     segments, info = model.transcribe(
         str(audio_path),
         language="zh",
-        temperature=0,
         beam_size=5,
+        temperature=0,
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 300},
         word_timestamps=True,
-        no_speech_threshold=0.3,
-        condition_on_previous_text=False,
         initial_prompt=initial_prompt if initial_prompt else None,
     )
     print(f"  语言: {info.language} (概率: {info.language_probability:.3f})")
