@@ -32,7 +32,8 @@ def _similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _clean(a), _clean(b)).ratio()
 
 
-def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
+def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo",
+                        initial_prompt: str = ""):
     """Transcribe audio with Whisper, return segments with timestamps."""
     # Auto-detect GPU via CTranslate2
     try:
@@ -51,8 +52,11 @@ def _whisper_transcribe(audio_path: Path, model_name: str = "large-v3-turbo"):
         str(audio_path),
         language="zh",
         temperature=0,
+        beam_size=5,
+        word_timestamps=True,
         no_speech_threshold=0.3,
         condition_on_previous_text=False,
+        initial_prompt=initial_prompt if initial_prompt else None,
     )
     print(f"  语言: {info.language} (概率: {info.language_probability:.3f})")
 
@@ -160,7 +164,10 @@ def align_plain(audio_path: Path, plain_text: str,
     original_sentences = _split_sentences(plain_text)
     print(f"  原文分句: {len(original_sentences)} 句")
 
-    whisper_segments = _whisper_transcribe(audio_path, model_name)
+    # Use first 50 chars of original text as initial prompt
+    initial_prompt = plain_text[:50] if plain_text else ""
+
+    whisper_segments = _whisper_transcribe(audio_path, model_name, initial_prompt)
     print(f"  Whisper 段落: {len(whisper_segments)} 段, "
           f"覆盖 {whisper_segments[0]['start']:.1f}-{whisper_segments[-1]['end']:.1f}s")
 
