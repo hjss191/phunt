@@ -48,7 +48,7 @@ Stage 8: 渲染视频
 ### 1. 克隆仓库 / Clone Repository
 
 ```bash
-git clone https://github.com/your-username/phunt.git
+git clone https://github.com/hjss191/phunt.git
 cd phunt
 ```
 
