@@ -48,8 +48,7 @@ def _whisper_words(audio_path: Path, model_name: str = "large-v3-turbo",
         language="zh",
         beam_size=5,
         temperature=0,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 300},
+        vad_filter=False,
         word_timestamps=True,
         initial_prompt=initial_prompt if initial_prompt else None,
     )
@@ -65,6 +64,28 @@ def _whisper_words(audio_path: Path, model_name: str = "large-v3-turbo",
             })
 
     return words
+
+
+def _count_syllables(text: str) -> int:
+    """Count syllables in mixed Chinese/English text.
+
+    Chinese char = 1 syllable each.
+    English word = count vowel groups (rough estimate).
+    """
+    # Split into Chinese chars and English words
+    # Chinese: each char is 1 syllable
+    # English: count vowel groups per word
+    chinese_chars = re.findall(r'[一-鿿]', text)
+    english_words = re.findall(r'[a-zA-Z]+', text)
+
+    eng_syllables = 0
+    for w in english_words:
+        w_lower = w.lower()
+        # Count vowel groups (a, e, i, o, u, y)
+        groups = re.findall(r'[aeiouy]+', w_lower)
+        eng_syllables += max(1, len(groups))
+
+    return len(chinese_chars) + eng_syllables
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -121,18 +142,16 @@ def align_plain(audio_path: Path, plain_text: str,
     results = []
     word_idx = 0
 
-    for i, sent in enumerate(original_sentences):
-        # Count characters in sentence (excluding punctuation)
-        sent_clean = re.sub(r'[，。？！：；、“”‘’（）…—～~《》\s,\.!\?;:\'\"\-]', '', sent)
-        char_count = max(len(sent_clean), 1)
+    # Pre-calculate syllable count per sentence
+    sent_syllables = [_count_syllables(s) for s in original_sentences]
+    total_syllables = sum(sent_syllables)
 
-        # Calculate how many words this sentence should get
-        # (proportional to character count)
-        total_chars = sum(
-            len(re.sub(r'[，。？！：；、“”‘’（）…—～~《》\s,\.!\?;:\'\"\-]', '', s))
-            for s in original_sentences
-        )
-        word_count = max(1, round(char_count / total_chars * total_words))
+    for i, sent in enumerate(original_sentences):
+        syl_count = max(sent_syllables[i], 1)
+
+        # Calculate how many Whisper words this sentence should get
+        # (proportional to syllable count)
+        word_count = max(1, round(syl_count / total_syllables * total_words))
 
         # Get start/end from word timestamps
         start = words[word_idx]["start"] if word_idx < total_words else total_duration

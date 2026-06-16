@@ -202,7 +202,7 @@ def _scene_html(idx, start, dur, text, layout, image_src="", product_name="", tp
 
 # ── Main generator ─────────────────────────────────────────────────
 
-def generate_html(product, alignment, palette, image_paths, audio_path, output_path):
+def generate_html(product, alignment, palette, image_paths, audio_path, output_path, audio_duration=None):
     """Generate a single HyperFrames HTML file with Stripe-style layouts."""
     # Classify images
     image_types = {}
@@ -225,52 +225,131 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
         return f"../images/{f}"
 
     # Extend scenes
-    total = max(r[2] for r in alignment)
+    total = audio_duration if audio_duration else max(r[2] for r in alignment)
     extended = []
     for i, (idx, start, end, text) in enumerate(alignment):
         ext_end = alignment[i + 1][1] if i < len(alignment) - 1 else total
         extended.append((idx, start, ext_end, text))
 
-    # Distribute images evenly
-    num_scenes = len(extended)
+    # ── Group segments: image scenes merge multiple segments, max 2-3 text scenes ──
+    num_segments = len(extended)
     num_images = len(all_imgs)
-    if num_images > 0 and num_scenes > 0:
-        step = num_scenes / num_images
-        image_scene_indices = set(int(i * step) for i in range(num_images))
-    else:
-        image_scene_indices = set()
+    MAX_TEXT_SCENES = 3
 
-    # Generate scenes
+    # Calculate how many segments each image scene should cover
+    if num_images >= num_segments:
+        # More images than segments — one image per segment, no text-only scenes
+        merge_factor = 1
+        num_text_scenes = 0
+    elif num_images == 0:
+        # No images — all text scenes
+        merge_factor = 1
+        num_text_scenes = num_segments
+    else:
+        # Reserve text scene slots (opening, maybe middle, closing)
+        num_text_scenes = min(MAX_TEXT_SCENES, max(0, num_segments - num_images))
+        # Remaining segments are covered by image scenes (each image used once)
+        non_text_segments = num_segments - num_text_scenes
+        # Each image stays on screen for multiple subtitle segments
+        merge_factor = max(1, non_text_segments // num_images)
+        if non_text_segments % num_images > 0:
+            merge_factor += 1
+
+    # Build grouped scenes: each group has (start, end, merged_text, is_image, image_info)
+    groups = []
+    i = 0
+    # Pick text-only scene positions: first, last, and middle (if enough segments)
+    text_positions = set()
+    if num_text_scenes >= 1:
+        text_positions.add(0)  # opening
+    if num_text_scenes >= 3:
+        text_positions.add(num_segments // 2)  # middle hook
+    if num_text_scenes >= 2:
+        text_positions.add(num_segments - 1)  # closing
+    # If only 2 text scenes: first + last
+    if num_text_scenes == 2:
+        text_positions = {0, num_segments - 1}
+
+    img_idx_local = 0
+    while i < num_segments:
+        # Decide: text-only scene or image scene?
+        if i in text_positions:
+            # Pure text scene — single segment
+            idx_s, start_s, end_s, text_s = extended[i]
+            groups.append({
+                "start": start_s, "end": end_s,
+                "text": text_s, "is_image": False,
+                "seg_indices": [i],
+            })
+            i += 1
+        else:
+            # Image scene — merge up to merge_factor segments
+            chunk_end = min(i + merge_factor, num_segments)
+            # Don't exceed available images
+            remaining_image_slots = num_images - img_idx_local
+            remaining_segments = num_segments - i
+            # Leave at least 1 segment per remaining image
+            if remaining_image_slots > 1:
+                max_chunk = remaining_segments - (remaining_image_slots - 1)
+                chunk_end = min(chunk_end, i + max(1, max_chunk))
+
+            merged_text = " ".join(extended[j][3] for j in range(i, chunk_end))
+            seg_start = extended[i][1]
+            seg_end = extended[chunk_end - 1][2]
+
+            # Assign image
+            if img_idx_local < num_images:
+                img_src = f"../images/{all_imgs[img_idx_local]}"
+                img_idx_local += 1
+            else:
+                img_src = ""
+
+            groups.append({
+                "start": seg_start, "end": seg_end,
+                "text": merged_text, "is_image": True,
+                "image_src": img_src, "seg_indices": list(range(i, chunk_end)),
+            })
+            i = chunk_end
+
+    # Generate scenes from groups
     scenes_html = []
     last_tpl = ""
+    scene_idx = 0
 
-    for i, (idx, start, end, text) in enumerate(extended):
-        dur = end - start
+    for g in groups:
+        dur = g["end"] - g["start"]
+        text = g["text"]
         has_product = product["name"].lower() in text.lower()
-        is_cta = idx >= len(extended) - 3
+        is_last = scene_idx == len(groups) - 1
         has_votes = "250" in text or "投票" in text or "支持" in text
 
-        if i in image_scene_indices:
-            if has_votes or (is_cta and has_product):
+        if g["is_image"]:
+            # Image scene — merged, longer duration
+            if has_votes or (is_last and has_product):
                 layout = "brand"
-                img_src = next_img()
                 pname = product["name"] if has_product else ""
             else:
                 layout = "img"
-                img_src = next_img()
                 pname = ""
-            scenes_html.append(_scene_html(idx, start, dur, text, layout, img_src, pname))
+            scenes_html.append(_scene_html(
+                scene_idx, g["start"], dur, text, layout,
+                g.get("image_src", ""), pname
+            ))
         else:
+            # Pure text scene
             tpl = random.choice(_TEMPLATE_NAMES)
             while tpl == last_tpl and len(_TEMPLATE_NAMES) > 1:
                 tpl = random.choice(_TEMPLATE_NAMES)
             last_tpl = tpl
-            scenes_html.append(_scene_html(idx, start, dur, text, "", "", "", tpl))
+            scenes_html.append(_scene_html(
+                scene_idx, g["start"], dur, text, "", "", "", tpl
+            ))
+        scene_idx += 1
 
-    # GSAP schedule
+    # GSAP schedule — use group timings (merged segments share one scene)
     gsap_entries = ",\n    ".join(
-        f"['s{r[0]}', {r[1]:.3f}, {r[2] - r[1]:.3f}]"
-        for r in extended
+        f"['s{i}', {g['start']:.3f}, {g['end'] - g['start']:.3f}]"
+        for i, g in enumerate(groups)
     )
 
     # CSS with palette accent
@@ -331,5 +410,7 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"   ✅ HTML 生成完成: {output_path.name} ({len(alignment)} 场景)")
+    num_img_scenes = sum(1 for g in groups if g["is_image"])
+    num_txt_scenes = sum(1 for g in groups if not g["is_image"])
+    print(f"   ✅ HTML 生成完成: {output_path.name} ({len(groups)} 场景: {num_img_scenes} 图片 + {num_txt_scenes} 文字, 原始 {len(alignment)} 段合并)")
     return output_path

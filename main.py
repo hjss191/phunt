@@ -163,6 +163,19 @@ def main():
     print("\n🌐 生成 HyperFrames HTML...")
     html_path = output_dir / "html" / "index.html"
 
+    # Get actual audio duration (alignment timestamps may be shorter than audio)
+    audio_dur = None
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(audio_path)],
+            capture_output=True, text=True
+        )
+        audio_dur = float(result.stdout.strip())
+    except Exception:
+        pass
+
     generate_html(
         product=product,
         alignment=use_alignment,
@@ -170,6 +183,7 @@ def main():
         image_paths=image_paths,
         audio_path=str(audio_path),
         output_path=html_path,
+        audio_duration=audio_dur,
     )
 
     # ── Stage 8: 渲染视频 ─────────────────────────────────────

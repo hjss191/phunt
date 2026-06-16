@@ -6,6 +6,9 @@ from openai import OpenAI
 from config import MIMO_API_KEY, MIMO_BASE_URL, TEMPLATES_DIR
 from srt_parser import parse_srt, extract_text, build_srt, estimate_srt_from_text
 
+# API timeout in seconds
+API_TIMEOUT = 120
+
 
 def load_templates() -> dict:
     """Load style templates from styles.json."""
@@ -56,7 +59,7 @@ def generate_copy_srt(product: dict, style_key: str = "style_a") -> tuple[str, s
     Returns:
         (srt_text, plain_text) — SRT 格式文本和纯文本。
     """
-    client = OpenAI(api_key=MIMO_API_KEY, base_url=MIMO_BASE_URL)
+    client = OpenAI(api_key=MIMO_API_KEY, base_url=MIMO_BASE_URL, timeout=API_TIMEOUT)
     templates = load_templates()
     style = templates["styles"][style_key]
 
@@ -72,6 +75,7 @@ def generate_copy_srt(product: dict, style_key: str = "style_a") -> tuple[str, s
             ],
             temperature=0.8,
             max_tokens=10000,
+            timeout=API_TIMEOUT,
         )
         raw_output = response.choices[0].message.content.strip()
         # 调试：显示 LLM 原始输出的前 200 字符
@@ -126,7 +130,7 @@ def generate_copy_plain(product: dict, style_key: str = "style_a") -> str | None
     Returns:
         Plain text string, or None on failure.
     """
-    client = OpenAI(api_key=MIMO_API_KEY, base_url=MIMO_BASE_URL)
+    client = OpenAI(api_key=MIMO_API_KEY, base_url=MIMO_BASE_URL, timeout=API_TIMEOUT)
     templates = load_templates()
     style = templates["styles"][style_key]
 
@@ -142,6 +146,7 @@ def generate_copy_plain(product: dict, style_key: str = "style_a") -> str | None
             ],
             temperature=0.8,
             max_tokens=10000,
+            timeout=API_TIMEOUT,
         )
         choice = response.choices[0]
         raw_output = choice.message.content
