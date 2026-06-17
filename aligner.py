@@ -66,28 +66,6 @@ def _whisper_words(audio_path: Path, model_name: str = "large-v3-turbo",
     return words
 
 
-def _count_syllables(text: str) -> int:
-    """Count syllables in mixed Chinese/English text.
-
-    Chinese char = 1 syllable each.
-    English word = count vowel groups (rough estimate).
-    """
-    # Split into Chinese chars and English words
-    # Chinese: each char is 1 syllable
-    # English: count vowel groups per word
-    chinese_chars = re.findall(r'[一-鿿]', text)
-    english_words = re.findall(r'[a-zA-Z]+', text)
-
-    eng_syllables = 0
-    for w in english_words:
-        w_lower = w.lower()
-        # Count vowel groups (a, e, i, o, u, y)
-        groups = re.findall(r'[aeiouy]+', w_lower)
-        eng_syllables += max(1, len(groups))
-
-    return len(chinese_chars) + eng_syllables
-
-
 def _split_sentences(text: str) -> list[str]:
     """Split plain text into sentences by newlines and Chinese punctuation."""
     sentences = []
@@ -108,9 +86,9 @@ def align_plain(audio_path: Path, plain_text: str,
                 model_name: str = "large-v3-turbo") -> list[tuple[int, float, float, str]]:
     """Align plain text to TTS audio using Whisper word timestamps.
 
-    1. Whisper outputs word-level timestamps (only timestamps, not text)
-    2. Original text is split into sentences by punctuation
-    3. Timestamps are assigned to sentences by order
+    Strategy: for each sentence, find the pause boundary closest to its
+    proportional position in the audio. This respects both the original
+    sentence structure and the actual speech rhythm.
 
     Args:
         audio_path: Path to the TTS audio file (mp3).
@@ -120,50 +98,81 @@ def align_plain(audio_path: Path, plain_text: str,
     Returns:
         List of (index, start_seconds, end_seconds, text) tuples.
     """
-    # Split original text into sentences
     original_sentences = _split_sentences(plain_text)
-    print(f"  原文分句: {len(original_sentences)} 句")
+    n_sent = len(original_sentences)
+    print(f"  原文分句: {n_sent} 句")
 
-    # Get word timestamps from Whisper
-    initial_prompt = plain_text[:50] if plain_text else ""
-    words = _whisper_words(audio_path, model_name, initial_prompt)
-    print(f"  Whisper 词数: {len(words)} 词")
+    words = _whisper_words(audio_path, model_name)
+    n_words = len(words)
+    print(f"  Whisper 词数: {n_words} 词")
 
     if not words:
         print("  ⚠️  Whisper 未识别到任何词")
         return []
 
-    # Calculate total duration
     total_duration = words[-1]["end"]
     print(f"  音频时长: {total_duration:.1f}s")
 
-    # Assign timestamps to sentences by word count proportion
-    total_words = len(words)
+    if n_sent <= 1:
+        return [(1, words[0]["start"], words[-1]["end"], original_sentences[0])]
+
+    # Detect pauses (gaps between consecutive words)
+    pauses = []  # [(word_idx, gap_duration, time_position)]
+    for i in range(1, n_words):
+        gap = words[i]["start"] - words[i - 1]["end"]
+        pauses.append({"idx": i, "gap": gap, "time": words[i]["start"]})
+
+    # For each sentence boundary (between sentence i and i+1),
+    # find the pause closest to the expected proportional time
+    sent_chars = [len(re.findall(r'[一-鿿]', s)) + len(re.findall(r'[a-zA-Z]', s))
+                  for s in original_sentences]
+    total_chars = sum(sent_chars)
+
+    # Expected time for each sentence boundary
+    boundary_times = []
+    cum_chars = 0
+    for i in range(n_sent - 1):
+        cum_chars += sent_chars[i]
+        boundary_times.append(cum_chars / total_chars * total_duration)
+
+    # For each boundary, find the best pause (closest in time, with preference for larger gaps)
+    cut_indices = []
+    used = set()
+    for target_time in boundary_times:
+        best = None
+        best_score = -1
+        for p in pauses:
+            if p["idx"] in used:
+                continue
+            # Score: prefer pauses close to target time, with slight bias for larger gaps
+            time_diff = abs(p["time"] - target_time)
+            # Proximity is dominant factor; gap size is tiebreaker
+            score = p["gap"] * 0.1 - time_diff
+            if score > best_score:
+                best_score = score
+                best = p
+        if best:
+            cut_indices.append(best["idx"])
+            used.add(best["idx"])
+
+    cut_indices.sort()
+    print(f"  切分点: {len(cut_indices)} 个")
+
+    # Split words into groups at cut points
+    groups = []
+    prev = 0
+    for cut in cut_indices:
+        groups.append((prev, cut - 1))
+        prev = cut
+    groups.append((prev, n_words - 1))
+
     results = []
-    word_idx = 0
+    for i, (w_start, w_end) in enumerate(groups):
+        start = words[w_start]["start"]
+        end = words[w_end]["end"]
+        results.append((i + 1, start, end, original_sentences[i]))
 
-    # Pre-calculate syllable count per sentence
-    sent_syllables = [_count_syllables(s) for s in original_sentences]
-    total_syllables = sum(sent_syllables)
-
-    for i, sent in enumerate(original_sentences):
-        syl_count = max(sent_syllables[i], 1)
-
-        # Calculate how many Whisper words this sentence should get
-        # (proportional to syllable count)
-        word_count = max(1, round(syl_count / total_syllables * total_words))
-
-        # Get start/end from word timestamps
-        start = words[word_idx]["start"] if word_idx < total_words else total_duration
-        end_idx = min(word_idx + word_count - 1, total_words - 1)
-        end = words[end_idx]["end"] if end_idx < total_words else total_duration
-
-        results.append((i + 1, start, end, sent))
-        word_idx += word_count
-
-    # Stats
     print(f"  对齐完成: {len(results)} 句, 总时长 {total_duration:.1f}s")
-
     return results
 
 

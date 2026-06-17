@@ -139,7 +139,7 @@ _CSS = """\
   width: 100%; height: 700px; border-radius: 20px; overflow: hidden;
   background: #1a1a2e;
 }
-.layout-img .img-container img { width: 100%; height: 100%; object-fit: cover; }
+.layout-img .img-container img { width: 100%; height: 100%; object-fit: contain; }
 .layout-img .scene-text {
   margin-top: 28px; font-size: 38px; font-weight: 600;
   text-align: center; color: #3a3a5e; line-height: 1.4;
@@ -159,7 +159,7 @@ _CSS = """\
   margin: 0 auto 36px;
   box-shadow: 0 12px 40px rgba(0,0,0,0.08);
 }
-.layout-brand .brand-icon img { width: 100%; height: 100%; object-fit: cover; }
+.layout-brand .brand-icon img { width: 100%; height: 100%; object-fit: contain; }
 .layout-brand .brand-name {
   font-size: 64px; font-weight: 800; letter-spacing: -0.01em;
   background: linear-gradient(135deg, #ff6b9d, #60a5fa);
@@ -246,7 +246,7 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
         merge_factor = 1
         num_text_scenes = num_segments
     else:
-        # Reserve text scene slots (opening, maybe middle, closing)
+        # Reserve text scene slots: closing, middle, early (first scene is always image)
         num_text_scenes = min(MAX_TEXT_SCENES, max(0, num_segments - num_images))
         # Remaining segments are covered by image scenes (each image used once)
         non_text_segments = num_segments - num_text_scenes
@@ -258,17 +258,15 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
     # Build grouped scenes: each group has (start, end, merged_text, is_image, image_info)
     groups = []
     i = 0
-    # Pick text-only scene positions: first, last, and middle (if enough segments)
+    # Pick text-only scene positions: middle and last (first scene is always image)
     text_positions = set()
     if num_text_scenes >= 1:
-        text_positions.add(0)  # opening
-    if num_text_scenes >= 3:
-        text_positions.add(num_segments // 2)  # middle hook
-    if num_text_scenes >= 2:
         text_positions.add(num_segments - 1)  # closing
-    # If only 2 text scenes: first + last
-    if num_text_scenes == 2:
-        text_positions = {0, num_segments - 1}
+    if num_text_scenes >= 2:
+        text_positions.add(num_segments // 2)  # middle hook
+    if num_text_scenes >= 3:
+        # Third text scene: place after first image (position 1), never position 0
+        text_positions.add(1)  # early hook (after opening image)
 
     img_idx_local = 0
     while i < num_segments:
@@ -297,12 +295,12 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
             seg_start = extended[i][1]
             seg_end = extended[chunk_end - 1][2]
 
-            # Assign image
+            # Assign image (reuse first image if exhausted)
             if img_idx_local < num_images:
                 img_src = f"../images/{all_imgs[img_idx_local]}"
                 img_idx_local += 1
             else:
-                img_src = ""
+                img_src = f"../images/{all_imgs[0]}" if all_imgs else ""
 
             groups.append({
                 "start": seg_start, "end": seg_end,
