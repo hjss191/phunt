@@ -43,7 +43,7 @@ def generate_voice(text: str, output_path: Path) -> Path:
         messages=[
             {
                 "role": "user",
-                "content": "逐字朗读以下文本，不要修改、省略或改写任何内容。语速适中，语调自然。",
+                "content": "逐字朗读以下文本，不要修改、省略或改写任何内容。语速稍快，有节奏感，语调富有感染力。",
             },
             {
                 "role": "assistant",

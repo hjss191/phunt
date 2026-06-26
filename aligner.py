@@ -1,4 +1,4 @@
-"""SRT alignment — Whisper word timestamps + LLM original text."""
+"""SRT alignment — Whisper word timestamps + sliding window Levenshtein matching."""
 
 import json
 import os
@@ -25,10 +25,10 @@ from faster_whisper import WhisperModel
 
 def _whisper_words(audio_path: Path, model_name: str = "large-v3-turbo",
                    initial_prompt: str = "") -> list[dict]:
-    """Get word-level timestamps from Whisper.
+    """Get word-level timestamps and text from Whisper.
 
     Returns:
-        List of {"start": float, "end": float} dicts (no text).
+        List of {"start": float, "end": float, "text": str} dicts.
     """
     # Auto-detect GPU via CTranslate2
     try:
@@ -54,16 +54,40 @@ def _whisper_words(audio_path: Path, model_name: str = "large-v3-turbo",
     )
     print(f"  语言: {info.language} (概率: {info.language_probability:.3f})")
 
-    # Extract word timestamps only (ignore text)
+    # Extract word timestamps AND text for matching
     words = []
     for seg in segments:
         for word in seg.words:
-            words.append({
-                "start": word.start,
-                "end": word.end,
-            })
+            text = word.word.strip()
+            if text:
+                words.append({
+                    "start": word.start,
+                    "end": word.end,
+                    "text": text,
+                })
 
     return words
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    """Compute Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if not s2:
+        return len(s1)
+    prev = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        curr = [i + 1]
+        for j, c2 in enumerate(s2):
+            cost = 0 if c1 == c2 else 1
+            curr.append(min(curr[j] + 1, prev[j + 1] + 1, prev[j] + cost))
+        prev = curr
+    return prev[-1]
+
+
+def _normalize(text: str) -> str:
+    """Strip punctuation and whitespace for fuzzy matching."""
+    return re.sub(r'[^一-鿿a-zA-Z0-9]', '', text)
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -73,7 +97,7 @@ def _split_sentences(text: str) -> list[str]:
         line = line.strip()
         if not line:
             continue
-        # Split by Chinese punctuation
+        # Split by sentence-ending punctuation only (NOT commas)
         parts = re.split(r'(?<=[。！？])', line)
         for part in parts:
             part = part.strip()
@@ -84,11 +108,12 @@ def _split_sentences(text: str) -> list[str]:
 
 def align_plain(audio_path: Path, plain_text: str,
                 model_name: str = "large-v3-turbo") -> list[tuple[int, float, float, str]]:
-    """Align plain text to TTS audio using Whisper word timestamps.
+    """Align plain text to TTS audio using sliding window Levenshtein matching.
 
-    Strategy: for each sentence, find the pause boundary closest to its
-    proportional position in the audio. This respects both the original
-    sentence structure and the actual speech rhythm.
+    Strategy: for each original sentence, slide a window over the Whisper
+    word sequence and find the window whose concatenated text has the minimum
+    Levenshtein distance to the sentence. This directly ties each sentence
+    to its actual speech timestamps without relying on pause detection.
 
     Args:
         audio_path: Path to the TTS audio file (mp3).
@@ -116,61 +141,48 @@ def align_plain(audio_path: Path, plain_text: str,
     if n_sent <= 1:
         return [(1, words[0]["start"], words[-1]["end"], original_sentences[0])]
 
-    # Detect pauses (gaps between consecutive words)
-    pauses = []  # [(word_idx, gap_duration, time_position)]
-    for i in range(1, n_words):
-        gap = words[i]["start"] - words[i - 1]["end"]
-        pauses.append({"idx": i, "gap": gap, "time": words[i]["start"]})
+    # Pre-normalize Whisper word texts
+    norm_words = [_normalize(w["text"]) for w in words]
 
-    # For each sentence boundary (between sentence i and i+1),
-    # find the pause closest to the expected proportional time
-    sent_chars = [len(re.findall(r'[一-鿿]', s)) + len(re.findall(r'[a-zA-Z]', s))
-                  for s in original_sentences]
-    total_chars = sum(sent_chars)
-
-    # Expected time for each sentence boundary
-    boundary_times = []
-    cum_chars = 0
-    for i in range(n_sent - 1):
-        cum_chars += sent_chars[i]
-        boundary_times.append(cum_chars / total_chars * total_duration)
-
-    # For each boundary, find the best pause (closest in time, with preference for larger gaps)
-    cut_indices = []
-    used = set()
-    for target_time in boundary_times:
-        best = None
-        best_score = -1
-        for p in pauses:
-            if p["idx"] in used:
-                continue
-            # Score: prefer pauses close to target time, with slight bias for larger gaps
-            time_diff = abs(p["time"] - target_time)
-            # Proximity is dominant factor; gap size is tiebreaker
-            score = p["gap"] * 0.1 - time_diff
-            if score > best_score:
-                best_score = score
-                best = p
-        if best:
-            cut_indices.append(best["idx"])
-            used.add(best["idx"])
-
-    cut_indices.sort()
-    print(f"  切分点: {len(cut_indices)} 个")
-
-    # Split words into groups at cut points
-    groups = []
-    prev = 0
-    for cut in cut_indices:
-        groups.append((prev, cut - 1))
-        prev = cut
-    groups.append((prev, n_words - 1))
-
+    # Sliding window matching for each sentence
     results = []
-    for i, (w_start, w_end) in enumerate(groups):
-        start = words[w_start]["start"]
-        end = words[w_end]["end"]
-        results.append((i + 1, start, end, original_sentences[i]))
+    last_end_idx = -1  # track consumed position to enforce monotonic advance
+
+    for sent_i, sentence in enumerate(original_sentences):
+        norm_sent = _normalize(sentence)
+        if not norm_sent:
+            continue
+
+        sent_char_len = len(norm_sent)
+        # Estimate word count from character count (Chinese: ~1-2 chars per Whisper word)
+        est_word_count = max(1, sent_char_len // 2)
+        min_win = max(1, est_word_count - 3)
+        max_win = min(n_words, est_word_count + 3)
+
+        best_dist = float("inf")
+        best_start = last_end_idx + 1
+        best_end = min(best_start, n_words - 1)
+
+        search_from = last_end_idx + 1
+        for win_size in range(min_win, max_win + 1):
+            for i in range(search_from, n_words - win_size + 1):
+                j = i + win_size - 1
+                candidate = "".join(norm_words[i:j + 1])
+                dist = _levenshtein(norm_sent, candidate)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_start = i
+                    best_end = j
+
+        # Warn if match quality is poor
+        quality = best_dist / max(sent_char_len, 1)
+        if quality > 0.6:
+            print(f"   ⚠️  句{sent_i+1} 匹配质量较差 (距离={best_dist}, 比例={quality:.2f}): 「{sentence[:20]}...」")
+
+        start_time = words[best_start]["start"]
+        end_time = words[best_end]["end"]
+        results.append((sent_i + 1, start_time, end_time, sentence))
+        last_end_idx = best_end
 
     print(f"  对齐完成: {len(results)} 句, 总时长 {total_duration:.1f}s")
     return results

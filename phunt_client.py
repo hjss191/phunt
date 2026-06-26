@@ -7,8 +7,8 @@ from config import PHUNT_API_TOKEN
 API_URL = "https://api.producthunt.com/v2/api/graphql"
 
 QUERY = """
-query GetTodayPosts($first: Int!, $postedAfter: DateTime) {
-  posts(order: VOTES, first: $first, postedAfter: $postedAfter) {
+query GetPosts($first: Int!, $postedAfter: DateTime, $postedBefore: DateTime) {
+  posts(order: VOTES, first: $first, postedAfter: $postedAfter, postedBefore: $postedBefore) {
     edges {
       node {
         id
@@ -49,17 +49,36 @@ query GetTodayPosts($first: Int!, $postedAfter: DateTime) {
 """
 
 
-def _get_today_pt() -> str:
-    """Get today's date in Product Hunt time (Pacific Time) as ISO string."""
+def _get_pt_date_start(days_ago: int = 0) -> str:
+    """Get the start of a day in Product Hunt time (Pacific Time) as ISO string.
+
+    Args:
+        days_ago: 0 = today, 1 = yesterday, etc.
+    """
     # Product Hunt uses Pacific Time (UTC-7 or UTC-8 depending on DST)
     # Use UTC-7 (PDT) as rough approximation
     pt_now = datetime.now(timezone(timedelta(hours=-7)))
-    today_start = pt_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return today_start.isoformat()
+    target = pt_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if days_ago:
+        target = target - timedelta(days=days_ago)
+    return target.isoformat()
 
 
-def fetch_top_products(count: int = 5) -> list[dict]:
+def _get_pt_date_end(days_ago: int = 0) -> str:
+    """Get the end of a day in Product Hunt time (Pacific Time) as ISO string."""
+    pt_now = datetime.now(timezone(timedelta(hours=-7)))
+    target = pt_now.replace(hour=23, minute=59, second=59, microsecond=0)
+    if days_ago:
+        target = target - timedelta(days=days_ago)
+    return target.isoformat()
+
+
+def fetch_top_products(count: int = 5, days_ago: int = 0) -> list[dict]:
     """Fetch top products from Product Hunt.
+
+    Args:
+        count: Number of products to fetch.
+        days_ago: 0 = today, 1 = yesterday, etc.
 
     Returns list of dicts with keys:
         name, tagline, description, url, votes, thumbnail, topics
@@ -68,7 +87,12 @@ def fetch_top_products(count: int = 5) -> list[dict]:
         "Authorization": f"Bearer {PHUNT_API_TOKEN}",
         "Content-Type": "application/json",
     }
-    payload = {"query": QUERY, "variables": {"first": count, "postedAfter": _get_today_pt()}}
+    variables = {
+        "first": count,
+        "postedAfter": _get_pt_date_start(days_ago),
+        "postedBefore": _get_pt_date_end(days_ago),
+    }
+    payload = {"query": QUERY, "variables": variables}
 
     resp = requests.post(API_URL, json=payload, headers=headers, timeout=30)
     resp.raise_for_status()
@@ -105,9 +129,9 @@ def fetch_top_products(count: int = 5) -> list[dict]:
     return products
 
 
-def display_products(products: list[dict]) -> None:
+def display_products(products: list[dict], label: str = "今日") -> None:
     """Print products as a numbered list for user selection."""
-    print("\n🏆 Product Hunt 今日 Top 5:\n")
+    print(f"\n🏆 Product Hunt {label} Top 5:\n")
     for i, p in enumerate(products, 1):
         topics_str = ", ".join(p["topics"][:3]) if p["topics"] else "N/A"
         image_count = len([m for m in p["media"] if m["type"] == "image"])

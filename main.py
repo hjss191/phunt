@@ -18,7 +18,7 @@ if _dll_dirs:
 import json
 from pathlib import Path
 
-from config import validate_config
+from config import validate_config, TEMPLATES_DIR
 from phunt_client import fetch_top_products, display_products, select_product
 from copywriter import generate_copy_plain, load_templates
 
@@ -53,6 +53,37 @@ from html_gen import generate_html
 from video_gen import render_video, check_hyperframes_available
 from formatter import get_output_dir, print_summary
 
+BGM_DIR = TEMPLATES_DIR / "bgm"
+
+
+def select_bgm() -> str | None:
+    """Let user pick a BGM file. Returns path or None."""
+    if not BGM_DIR.is_dir():
+        return None
+    bgm_files = sorted(BGM_DIR.glob("*.mp3"))
+    if not bgm_files:
+        return None
+
+    print("\n🎵 选择背景音乐:")
+    print("   0) 不使用 BGM")
+    for i, f in enumerate(bgm_files, 1):
+        print(f"   {i}) {f.name}")
+
+    while True:
+        choice = input(f"\n  请选择 [0-{len(bgm_files)}]，直接回车默认 0: ").strip()
+        if not choice or choice == "0":
+            print("   ✅ 不使用 BGM")
+            return None
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(bgm_files):
+                selected = bgm_files[idx]
+                print(f"   ✅ 已选择: {selected.name}")
+                return str(selected)
+        except ValueError:
+            pass
+        print("   ⚠️  无效输入，请重新选择")
+
 
 def main():
     """Run the daily Product Hunt content generation workflow."""
@@ -65,10 +96,26 @@ def main():
     validate_config()
     print("   ✅ 配置检查通过")
 
-    # ── Stage 1: 拉取产品 ──────────────────────────────────────
-    print("\n📡 拉取 Product Hunt 今日 Top 5...")
-    products = fetch_top_products(5)
-    display_products(products)
+    # ── Stage 1: 选择日期 ──────────────────────────────────────
+    print("\n📅 选择产品日期:")
+    print("   1) 今日")
+    print("   2) 昨日")
+    while True:
+        date_choice = input("\n  请选择 [1-2]，直接回车默认 1: ").strip()
+        if not date_choice or date_choice == "1":
+            days_ago = 0
+            date_label = "今日"
+            break
+        elif date_choice == "2":
+            days_ago = 1
+            date_label = "昨日"
+            break
+        print("   ⚠️  无效输入，请重新选择")
+
+    # ── Stage 1.5: 拉取产品 ────────────────────────────────────
+    print(f"\n📡 拉取 Product Hunt {date_label} Top 5...")
+    products = fetch_top_products(5, days_ago=days_ago)
+    display_products(products, label=date_label)
 
     # ── Stage 2: 选择产品 ──────────────────────────────────────
     product = select_product(products)
@@ -153,6 +200,9 @@ def main():
     else:
         print(f"   ✅ 图片充足 ({len(image_paths)} 张)")
 
+    # ── Stage 6.8: 选择 BGM ───────────────────────────────────
+    bgm_path = select_bgm()
+
     # ── Stage 7: 生成 HTML ─────────────────────────────────────
     print("\n🌐 生成 HyperFrames HTML...")
     html_path = output_dir / "html" / "index.html"
@@ -178,6 +228,7 @@ def main():
         audio_path=str(audio_path),
         output_path=html_path,
         audio_duration=audio_dur,
+        bgm_path=bgm_path,
     )
 
     # ── Stage 8: 渲染视频 ─────────────────────────────────────

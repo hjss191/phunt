@@ -2,8 +2,11 @@
 
 import json
 import random
+import shutil
 from pathlib import Path
 from PIL import Image
+
+BGM_DIR = Path(__file__).parent / "templates" / "bgm"
 
 
 # ── Image utils ────────────────────────────────────────────────────
@@ -124,25 +127,27 @@ _CSS = """\
 .aurora-blue { width: 600px; height: 600px; background: #60a5fa; opacity: 0.12; bottom: -100px; left: -200px; }
 .aurora-yellow { width: 500px; height: 500px; background: #fbbf24; opacity: 0.08; top: 600px; right: 100px; }
 
-.text-main .hl { color: %(accent)s; }
+.text-main .hl { color: {accent}; }
 
-/* Image layout */
+/* Image layout — glass card with contain image */
 .layout-img .glass {
   background: rgba(255,255,255,0.65);
   backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
   border: 1px solid rgba(255,255,255,0.8);
   border-radius: 28px; padding: 32px;
-  max-width: 900px;
+  max-width: 960px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column; align-items: center;
 }
 .layout-img .img-container {
-  width: 100%; height: 700px; border-radius: 20px; overflow: hidden;
+  width: 100%; height: 1100px; border-radius: 20px; overflow: hidden;
   background: #1a1a2e;
 }
 .layout-img .img-container img { width: 100%; height: 100%; object-fit: contain; }
 .layout-img .scene-text {
-  margin-top: 28px; font-size: 38px; font-weight: 600;
-  text-align: center; color: #3a3a5e; line-height: 1.4;
+  margin-top: 28px; font-size: 44px; font-weight: 700;
+  text-align: center; color: #0a0a1a; line-height: 1.4;
+  letter-spacing: -0.01em;
 }
 
 /* Brand layout */
@@ -167,14 +172,24 @@ _CSS = """\
   background-clip: text; margin-bottom: 16px;
 }
 .layout-brand .brand-desc { font-size: 36px; color: #6a6a8a; line-height: 1.5; }
+
+/* Same-image scenes: overlay on top of previous scene, fixed image position */
+.clip.same-image { z-index: 2; }
+.clip.same-image .glass { height: 1300px; flex-shrink: 0; display: flex; flex-direction: column; }
+.clip.same-image .img-container { flex-shrink: 0; }
+.clip.same-image .scene-text { flex-shrink: 0; min-height: 2.6em; }
 """
 
 
 # ── Scene generation ───────────────────────────────────────────────
 
-def _scene_html(idx, start, dur, text, layout, image_src="", product_name="", tpl=""):
+def _scene_html(idx, start, dur, text, layout, image_src="", product_name="", tpl="", same_image=False, no_fadeout=False):
     sid = f"s{idx}"
     cls = f"layout-{layout}" if layout in ("img", "brand") else ""
+    if same_image:
+        cls += " same-image"
+    if no_fadeout:
+        cls += " no-fadeout"
 
     lines = [f'  <div class="clip {cls}" id="{sid}" data-start="{start:.3f}" data-duration="{dur:.3f}" data-track-index="0">']
 
@@ -202,7 +217,7 @@ def _scene_html(idx, start, dur, text, layout, image_src="", product_name="", tp
 
 # ── Main generator ─────────────────────────────────────────────────
 
-def generate_html(product, alignment, palette, image_paths, audio_path, output_path, audio_duration=None):
+def generate_html(product, alignment, palette, image_paths, audio_path, output_path, audio_duration=None, bgm_path=None):
     """Generate a single HyperFrames HTML file with Stripe-style layouts."""
     # Classify images
     image_types = {}
@@ -214,15 +229,6 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
             image_types[fname] = "phone"
 
     all_imgs = list(image_types.keys())
-    img_idx = 0
-
-    def next_img():
-        nonlocal img_idx
-        if img_idx >= len(all_imgs):
-            return ""
-        f = all_imgs[img_idx]
-        img_idx += 1
-        return f"../images/{f}"
 
     # Extend scenes
     total = audio_duration if audio_duration else max(r[2] for r in alignment)
@@ -231,83 +237,47 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
         ext_end = alignment[i + 1][1] if i < len(alignment) - 1 else total
         extended.append((idx, start, ext_end, text))
 
-    # ── Group segments: image scenes merge multiple segments, max 2-3 text scenes ──
+    # ── Group segments: one scene per subtitle, images reuse when scarce ──
     num_segments = len(extended)
     num_images = len(all_imgs)
-    MAX_TEXT_SCENES = 3
 
-    # Calculate how many segments each image scene should cover
-    if num_images >= num_segments:
-        # More images than segments — one image per segment, no text-only scenes
-        merge_factor = 1
-        num_text_scenes = 0
-    elif num_images == 0:
-        # No images — all text scenes
-        merge_factor = 1
-        num_text_scenes = num_segments
-    else:
-        # Reserve text scene slots: closing, middle, early (first scene is always image)
-        num_text_scenes = min(MAX_TEXT_SCENES, max(0, num_segments - num_images))
-        # Remaining segments are covered by image scenes (each image used once)
-        non_text_segments = num_segments - num_text_scenes
-        # Each image stays on screen for multiple subtitle segments
-        merge_factor = max(1, non_text_segments // num_images)
-        if non_text_segments % num_images > 0:
-            merge_factor += 1
+    # Text-only scene positions: opening hook, closing; add mid-point if enough segments
+    text_positions = {0, num_segments - 1}
+    if num_segments >= 6:
+        text_positions.add(num_segments // 2)
 
-    # Build grouped scenes: each group has (start, end, merged_text, is_image, image_info)
     groups = []
-    i = 0
-    # Pick text-only scene positions: middle and last (first scene is always image)
-    text_positions = set()
-    if num_text_scenes >= 1:
-        text_positions.add(num_segments - 1)  # closing
-    if num_text_scenes >= 2:
-        text_positions.add(num_segments // 2)  # middle hook
-    if num_text_scenes >= 3:
-        # Third text scene: place after first image (position 1), never position 0
-        text_positions.add(1)  # early hook (after opening image)
-
-    img_idx_local = 0
-    while i < num_segments:
-        # Decide: text-only scene or image scene?
-        if i in text_positions:
-            # Pure text scene — single segment
-            idx_s, start_s, end_s, text_s = extended[i]
+    # Even distribution: assign images so each covers ~equal number of scenes
+    img_positions = [i for i in range(num_segments) if i not in text_positions and num_images > 0]
+    img_count = len(img_positions)
+    last_img_src = ""
+    for seg_i in range(num_segments):
+        idx_s, start_s, end_s, text_s = extended[seg_i]
+        if seg_i in text_positions or num_images == 0:
             groups.append({
                 "start": start_s, "end": end_s,
                 "text": text_s, "is_image": False,
-                "seg_indices": [i],
+                "seg_indices": [seg_i],
             })
-            i += 1
+            last_img_src = ""
         else:
-            # Image scene — merge up to merge_factor segments
-            chunk_end = min(i + merge_factor, num_segments)
-            # Don't exceed available images
-            remaining_image_slots = num_images - img_idx_local
-            remaining_segments = num_segments - i
-            # Leave at least 1 segment per remaining image
-            if remaining_image_slots > 1:
-                max_chunk = remaining_segments - (remaining_image_slots - 1)
-                chunk_end = min(chunk_end, i + max(1, max_chunk))
-
-            merged_text = " ".join(extended[j][3] for j in range(i, chunk_end))
-            seg_start = extended[i][1]
-            seg_end = extended[chunk_end - 1][2]
-
-            # Assign image (reuse first image if exhausted)
-            if img_idx_local < num_images:
-                img_src = f"../images/{all_imgs[img_idx_local]}"
-                img_idx_local += 1
-            else:
-                img_src = f"../images/{all_imgs[0]}" if all_imgs else ""
-
+            # Even distribution: map scene position among image scenes → image index
+            pos_in_img = img_positions.index(seg_i)
+            img_idx = pos_in_img * num_images // img_count
+            img_src = f"../images/{all_imgs[img_idx]}"
+            same = (img_src == last_img_src)
             groups.append({
-                "start": seg_start, "end": seg_end,
-                "text": merged_text, "is_image": True,
-                "image_src": img_src, "seg_indices": list(range(i, chunk_end)),
+                "start": start_s, "end": end_s,
+                "text": text_s, "is_image": True,
+                "image_src": img_src, "seg_indices": [seg_i],
+                "same_image": same,
             })
-            i = chunk_end
+            last_img_src = img_src
+
+    # Mark scenes that should NOT fade out (next scene continues same image)
+    for i in range(len(groups) - 1):
+        if groups[i].get("is_image") and groups[i + 1].get("same_image"):
+            groups[i]["no_fadeout"] = True
 
     # Generate scenes from groups
     scenes_html = []
@@ -319,7 +289,7 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
         text = g["text"]
         has_product = product["name"].lower() in text.lower()
         is_last = scene_idx == len(groups) - 1
-        has_votes = "250" in text or "投票" in text or "支持" in text
+        has_votes = str(product.get("votes", 0)) in text or "投票" in text or "支持" in text
 
         if g["is_image"]:
             # Image scene — merged, longer duration
@@ -331,7 +301,9 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
                 pname = ""
             scenes_html.append(_scene_html(
                 scene_idx, g["start"], dur, text, layout,
-                g.get("image_src", ""), pname
+                g.get("image_src", ""), pname,
+                same_image=g.get("same_image", False),
+                no_fadeout=g.get("no_fadeout", False)
             ))
         else:
             # Pure text scene
@@ -350,15 +322,29 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
         for i, g in enumerate(groups)
     )
 
-    # CSS with palette accent
-    css = _CSS.replace("{accent}", palette.get("accent", "#ff6b9d"))
+    accent = palette.get("accent", "#ff6b9d")
+
+    # Copy narration audio to output directory (always overwrite)
+    audio_src = Path(audio_path)
+    audio_dest = output_path.parent / audio_src.name
+    shutil.copy2(audio_src, audio_dest)
+
+    # BGM handling
+    _bgm_html = ""
+    if bgm_path:
+        bgm_src = Path(bgm_path)
+        if bgm_src.is_file():
+            bgm_dest = output_path.parent / bgm_src.name
+            if not bgm_dest.exists():
+                shutil.copy2(bgm_src, bgm_dest)
+            _bgm_html = f'<audio id="bgm" data-start="0" data-duration="{total:.3f}" data-track-index="0" data-volume="0.15" src="{bgm_src.name}"></audio>'
 
     html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <style>
-{css}</style>
+{_CSS}</style>
 </head>
 <body>
 <div id="stage" data-composition-id="product-video" data-start="0.0" data-width="1080" data-height="1920">
@@ -369,7 +355,8 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
 
 {chr(10).join(scenes_html)}
 
-  <audio id="bgm" data-start="0" data-duration="{total:.3f}" data-track-index="1" data-volume="1" src="{Path(audio_path).name}"></audio>
+  <audio id="narration" data-start="0" data-duration="{total:.3f}" data-track-index="1" data-volume="1" src="{Path(audio_path).name}"></audio>
+  {_bgm_html}
 
 </div>
 
@@ -384,15 +371,35 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
     var el = document.getElementById(id);
     if (!el) return;
     master.set(el, {{ opacity: 1 }}, start);
-    var kids = el.querySelectorAll('.text-main, .text-block, .glass, .scene-text, .brand-name, .brand-icon, .brand-desc, .img-container');
-    if (kids.length) {{
-      master.fromTo(kids,
-        {{ opacity: 0, y: 40, scale: 0.96 }},
-        {{ opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power3.out", stagger: 0.08 }},
-        start
-      );
+    if (el.classList.contains('same-image')) {{
+      // Same image as previous scene: text appears instantly, no animation
+      var text = el.querySelector('.scene-text');
+      if (text) {{
+        master.set(text, {{ opacity: 1, y: 0 }}, start);
+      }}
+      // No fade-out — image persists, next scene overlays
+    }} else if (el.classList.contains('no-fadeout')) {{
+      // Will be overlaid by next same-image scene — no fade-out needed
+      var kids = el.querySelectorAll('.text-main, .text-block, .glass, .scene-text, .brand-name, .brand-icon, .brand-desc, .img-container');
+      if (kids.length) {{
+        master.fromTo(kids,
+          {{ opacity: 0, y: 40, scale: 0.96 }},
+          {{ opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power3.out", stagger: 0.08 }},
+          start
+        );
+      }}
+      // Intentionally no master.to(el, ...) fade-out
+    }} else {{
+      var kids = el.querySelectorAll('.text-main, .text-block, .glass, .scene-text, .brand-name, .brand-icon, .brand-desc, .img-container');
+      if (kids.length) {{
+        master.fromTo(kids,
+          {{ opacity: 0, y: 40, scale: 0.96 }},
+          {{ opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "power3.out", stagger: 0.08 }},
+          start
+        );
+      }}
+      master.to(el, {{ opacity: 0, duration: 0.15 }}, start + dur - 0.15);
     }}
-    master.to(el, {{ opacity: 0, duration: 0.15 }}, start + dur - 0.15);
   }}
 
   var scenes = [
@@ -403,6 +410,9 @@ def generate_html(product, alignment, palette, image_paths, audio_path, output_p
 </script>
 </body>
 </html>"""
+
+    # Replace accent color placeholders (in inline styles from templates)
+    html = html.replace("{accent}", accent)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:

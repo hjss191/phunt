@@ -28,7 +28,7 @@ load_dotenv()
 # === 默认配置 ===
 DEFAULT_VOICE = "苏打"
 DEFAULT_STYLE = "用沉稳、专业的新闻播报语气，语速适中，语调自然平稳。"
-DEFAULT_FONT_SIZE = 22
+DEFAULT_FONT_SIZE = 18
 DEFAULT_ORIGINAL_VOLUME = 0.3  # 原视频音量
 
 
@@ -79,8 +79,8 @@ def burn_subtitles(video_path: Path, audio_path: Path, srt_path: Path, output_pa
         f"OutlineColour=&H00000000,"
         f"Outline=3,"
         f"Shadow=1,"
-        f"Alignment=2,"
-        f"MarginV=30'"
+        f"Alignment=6,"
+        f"MarginV=10'"
     )
 
     # 混合原声 + 配音

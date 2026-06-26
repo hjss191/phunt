@@ -1,6 +1,7 @@
 """AI copywriter — generates copy in SRT format using MiMo API."""
 
 import json
+import re
 from pathlib import Path
 from openai import OpenAI
 from config import MIMO_API_KEY, MIMO_BASE_URL, TEMPLATES_DIR
@@ -29,7 +30,6 @@ def build_prompt(product: dict, style: dict) -> str:
     comments = product.get("comments", [])
     if comments:
         # Strip HTML tags for cleaner text
-        import re
         maker_comment = comments[0]["body"]
         maker_comment = re.sub(r"<[^>]+>", "", maker_comment)  # Remove HTML
         maker_comment = maker_comment.strip()
@@ -171,4 +171,17 @@ def generate_copy_plain(product: dict, style_key: str = "style_a") -> str | None
         line_count = len([l for l in plain_text.split("\n") if l.strip()])
         print(f"   ✅ 生成完成 ({line_count} 行)")
 
-    return plain_text if plain_text.strip() else None
+    if not plain_text or not plain_text.strip():
+        return None
+
+    # ── Hook 检查：第一句长度 ──────────────────────────────────
+    first_line = plain_text.strip().split("\n")[0].strip()
+    # Remove common punctuation for length check
+    first_sentence = re.split(r'[。！？，,]', first_line)[0]
+    if len(first_sentence) > 20:
+        print(f"   ⚠️  开头 hook 偏长（{len(first_sentence)} 字）：「{first_sentence[:30]}...」")
+        print(f"       建议人工审核时缩短到 15 字以内，提高前3秒完播率")
+    else:
+        print(f"   ✅ 开头 hook 长度 OK（{len(first_sentence)} 字）：「{first_sentence}」")
+
+    return plain_text
